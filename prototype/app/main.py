@@ -6,6 +6,7 @@ FastAPI 대신 Starlette + Pydantic으로 구성했다. FastAPI가 얹혀 있는
 """
 from __future__ import annotations
 
+import hmac
 import json
 from datetime import date
 
@@ -49,6 +50,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 # --- 요청 모델 (§10) --------------------------------------------------------
 class LoginRequest(BaseModel):
     employee_no: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class ChatRequest(BaseModel):
@@ -56,8 +58,12 @@ class ChatRequest(BaseModel):
 
 
 class SaveRequest(BaseModel):
-    kind: str = Field(pattern="^(bookmarks|saved_answers|checklist)$")
+    kind: str = Field(pattern="^(saved_answers|checklist)$")
     payload: dict = Field(default_factory=dict)
+
+
+class SeenRequest(BaseModel):
+    kind: str = Field(pattern="^(saved_answers|checklist)$")
 
 
 class ToggleRequest(BaseModel):
@@ -109,6 +115,8 @@ async def get_users(request):
         "ok": True,
         "mode_badge": config.MODE_BADGE,
         "storage_persistent": not config.STORAGE_EPHEMERAL,
+        # 기본값일 때만 안내한다. 환경변수로 바꾼 비밀번호는 화면에 내보내지 않는다.
+        "demo_password_hint": config.DEMO_PASSWORD if config.DEMO_PASSWORD_IS_DEFAULT else None,
         "users": [
             {
                 "employee_no": no,
@@ -129,8 +137,11 @@ async def login(request):
         payload = LoginRequest(**await read_json(request))
     except (ValidationError, ValueError, json.JSONDecodeError) as exc:
         return error("E_INPUT_INVALID", str(exc), 400)
-    if payload.employee_no not in service.users:
-        return error("E_AUTH", "사용자를 확인할 수 없습니다.", 401)
+    # 비밀번호는 반드시 서버에서 검증한다. 클라이언트 코드에 비밀번호를 두지 않는다.
+    # 상수 시간 비교로 타이밍 정보를 주지 않는다.
+    password_ok = hmac.compare_digest(payload.password, config.DEMO_PASSWORD)
+    if payload.employee_no not in service.users or not password_ok:
+        return error("E_AUTH", "사번 또는 비밀번호가 올바르지 않습니다.", 401)
 
     session = new_session(payload.employee_no)
     response = JSONResponse({"ok": True, "user": public_user(payload.employee_no)})
@@ -189,8 +200,21 @@ async def get_storage(request):
     session = current_session(request)
     if session is None:
         return error("E_AUTH", "세션이 없습니다.", 401)
-    items = storage.annotate_staleness(session.employee_no, service.retriever.docs_by_id)
+    items = storage.annotate(session.employee_no, service.retriever.docs_by_id)
     return JSONResponse({"ok": True, "items": items})
+
+
+async def mark_seen(request):
+    """목록을 열어본 것으로 표시한다. 이후 New 배지가 사라진다."""
+    session = current_session(request)
+    if session is None:
+        return error("E_AUTH", "세션이 없습니다.", 401)
+    try:
+        payload = SeenRequest(**await read_json(request))
+    except (ValidationError, ValueError, json.JSONDecodeError):
+        return error("E_INPUT_INVALID", "요청 형식을 확인해 주세요.", 400)
+    storage.mark_seen(session.employee_no, payload.kind)
+    return JSONResponse({"ok": True})
 
 
 async def post_storage(request):
@@ -265,6 +289,7 @@ routes = [
     Route("/api/storage", get_storage),
     Route("/api/storage", post_storage, methods=["POST"]),
     Route("/api/storage/checklist/toggle", toggle_checklist, methods=["POST"]),
+    Route("/api/storage/seen", mark_seen, methods=["POST"]),
     Route("/api/storage/{kind}/{item_id}", delete_storage, methods=["DELETE"]),
     Route("/api/health", health),
     Mount("/static", app=StaticFiles(directory=str(config.STATIC_DIR)), name="static"),

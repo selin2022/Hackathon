@@ -15,7 +15,7 @@ from app.policy import guardrails
 
 _LOCK = threading.Lock()
 
-KINDS = ("bookmarks", "saved_answers", "checklist")
+KINDS = ("saved_answers", "checklist")
 
 
 def _now() -> str:
@@ -23,7 +23,10 @@ def _now() -> str:
 
 
 def _empty_user() -> dict:
-    return {kind: [] for kind in KINDS}
+    data = {kind: [] for kind in KINDS}
+    # 각 목록을 마지막으로 열어본 시각. 이후 담긴 항목에 New 배지를 붙인다.
+    data["last_viewed"] = {kind: None for kind in KINDS}
+    return data
 
 
 # 파일에 쓸 수 없는 환경(읽기 전용 파일시스템)에서는 프로세스 메모리에만 보관한다.
@@ -77,17 +80,7 @@ def add(employee_no: str, kind: str, payload: dict) -> dict:
     if kind not in KINDS:
         raise StorageError("알 수 없는 저장 유형입니다.")
 
-    if kind == "bookmarks":
-        _sensitive_check(payload.get("title", ""), payload.get("section_path", ""))
-        item = {
-            "id": uuid.uuid4().hex[:12],
-            "doc_id": payload.get("doc_id", ""),
-            "title": payload.get("title", ""),
-            "version": payload.get("version", ""),
-            "section_path": payload.get("section_path", ""),
-            "saved_at": _now(),
-        }
-    elif kind == "saved_answers":
+    if kind == "saved_answers":
         _sensitive_check(payload.get("query", ""), payload.get("summary", ""))
         item = {
             "id": uuid.uuid4().hex[:12],
@@ -95,6 +88,9 @@ def add(employee_no: str, kind: str, payload: dict) -> dict:
             "summary": payload.get("summary", ""),
             "actions": payload.get("actions", [])[:10],
             "citations": payload.get("citations", [])[:5],
+            "cautions": payload.get("cautions", [])[:6],
+            "notices": payload.get("notices", [])[:4],
+            "personalization_basis": payload.get("personalization_basis", ""),
             "saved_at": _now(),
         }
     else:  # checklist
@@ -160,16 +156,52 @@ def clear(employee_no: str, kind: str | None = None) -> None:
         _save(data)
 
 
-def annotate_staleness(employee_no: str, docs_by_id: dict) -> dict:
-    """출처 문서가 갱신되었으면 배지를 붙인다 (이용 가이드 §4.D)."""
+def mark_seen(employee_no: str, kind: str) -> None:
+    """목록을 열어본 시각을 기록한다. 이후 New 배지가 사라진다."""
+    if kind not in KINDS:
+        return
+    with _LOCK:
+        data = _load()
+        user = data.setdefault(employee_no, _empty_user())
+        user.setdefault("last_viewed", {})[kind] = _now()
+        _save(data)
+
+
+def annotate(employee_no: str, docs_by_id: dict) -> dict:
+    """출처 문서 갱신 배지와 New 배지를 붙인다 (이용 가이드 §4)."""
     items = get_all(employee_no)
-    for kind in ("bookmarks", "checklist"):
+    last_viewed = items.get("last_viewed") or {}
+
+    for kind in KINDS:
+        seen_at = last_viewed.get(kind)
         for item in items.get(kind, []):
-            doc_id = item.get("doc_id")
-            saved_ver = item.get("version") or item.get("doc_version")
-            doc = docs_by_id.get(doc_id)
-            if doc and saved_ver and doc.version != saved_ver:
-                item["stale"] = f"출처 문서가 v{doc.version}로 갱신되었습니다. 내용을 다시 확인해 주세요."
-            else:
-                item["stale"] = None
+            item["is_new"] = bool(seen_at is None or item.get("saved_at", "") > seen_at)
+
+    for item in items.get("checklist", []):
+        doc = docs_by_id.get(item.get("doc_id"))
+        saved_ver = item.get("doc_version")
+        item["stale"] = (
+            f"출처 문서가 v{doc.version}로 갱신되었습니다. 내용을 다시 확인해 주세요."
+            if doc and saved_ver and doc.version != saved_ver else None
+        )
+
+    for item in items.get("saved_answers", []):
+        stale = [
+            f"{c.get('title')} v{docs_by_id[c['doc_id']].version}"
+            for c in item.get("citations", [])
+            if c.get("doc_id") in docs_by_id
+            and c.get("version") != docs_by_id[c["doc_id"]].version
+        ]
+        item["stale"] = (
+            f"근거 문서가 갱신되었습니다 ({', '.join(stale)}). 내용을 다시 확인해 주세요."
+            if stale else None
+        )
+
+    items["counts"] = {
+        "checklist": sum(1 for i in items.get("checklist", []) if not i.get("done")),
+        "saved_answers": len(items.get("saved_answers", [])),
+    }
+    items["new_counts"] = {
+        kind: sum(1 for i in items.get(kind, []) if i.get("is_new")) for kind in KINDS
+    }
     return items

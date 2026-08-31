@@ -81,6 +81,12 @@ LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 
+# --- 데모 로그인 -----------------------------------------------------------
+# 데모용 고정 비밀번호. 실제 인증이 아니며 운영 환경에서는 사내 SSO로 대체된다.
+# 검증은 반드시 서버에서 한다 — 클라이언트에 비밀번호를 두지 않는다.
+DEMO_PASSWORD = os.getenv("DEMO_PASSWORD", "1234")
+DEMO_PASSWORD_IS_DEFAULT = not os.getenv("DEMO_PASSWORD")
+
 # --- 데모 고지 -------------------------------------------------------------
 MODE_BADGE = "[프로토타입 데모] 합성 문서 기반 · 외부 LLM API 미사용 · 실제 사내 데이터 없음"
 DEMO_CONTACT = {

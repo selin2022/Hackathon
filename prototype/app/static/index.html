@@ -9,14 +9,27 @@
 <body>
 <div id="mode-badge" class="mode-badge"></div>
 
-<!-- 로그인 (데모: 사번 선택) -->
+<!-- 로그인 -->
 <section id="login-view" class="view">
-  <div class="login-card">
+  <form id="login-form" class="login-card" autocomplete="off">
     <h1>사내 온보딩 도우미</h1>
-    <p class="sub">이용하실 계정을 선택해 주세요. 해커톤 데모용 가상 사용자입니다.</p>
-    <p class="sub small">운영 환경에서는 이 화면 대신 사내 SSO 로그인이 들어갑니다.</p>
-    <div id="user-list" class="user-list"></div>
-  </div>
+    <p class="sub">사번과 비밀번호를 입력해 주세요.</p>
+
+    <label class="field-label" for="employee-no">사번</label>
+    <select id="employee-no" class="field" required></select>
+
+    <label class="field-label" for="password">비밀번호</label>
+    <input id="password" class="field" type="password" maxlength="128"
+           placeholder="비밀번호" required>
+
+    <p id="login-error" class="login-error hidden" role="alert"></p>
+    <button type="submit" class="primary-btn">로그인</button>
+
+    <p id="password-hint" class="sub small hidden"></p>
+    <p class="sub small">
+      해커톤 데모용 가상 계정입니다. 운영 환경에서는 이 화면 대신 사내 SSO 로그인이 들어갑니다.
+    </p>
+  </form>
 </section>
 
 <!-- 메인 -->
@@ -25,8 +38,8 @@
     <div class="brand">사내 온보딩 도우미</div>
     <nav class="tabs">
       <button class="tab active" data-tab="chat">대화</button>
-      <button class="tab" data-tab="saved">내 저장함</button>
-      <button class="tab" data-tab="checklist">체크리스트</button>
+      <button class="tab" data-tab="todo">내 할 일<span class="tab-badge hidden" data-badge="checklist"></span></button>
+      <button class="tab" data-tab="saved">저장한 답변<span class="tab-badge hidden" data-badge="saved_answers"></span></button>
       <button class="tab" data-tab="docs">문서 목록</button>
     </nav>
     <div class="user-chip">
@@ -47,24 +60,26 @@
       <p class="composer-note">비밀번호·주민등록번호·계좌번호는 입력하지 마세요.</p>
     </div>
 
-    <div id="tab-saved" class="tab-panel hidden">
+    <div id="tab-todo" class="tab-panel hidden">
       <div class="panel-head">
-        <h2>내 저장함</h2>
-        <button class="link-btn danger" data-clear="all">전체 삭제</button>
-      </div>
-      <p class="sub">본인만 볼 수 있습니다. 인사담당자와 관리자도 열람할 수 없습니다.</p>
-      <p id="storage-note" class="sub small hidden"></p>
-      <h3>북마크</h3><div id="bookmarks" class="card-list"></div>
-      <h3>저장한 답변</h3><div id="saved-answers" class="card-list"></div>
-    </div>
-
-    <div id="tab-checklist" class="tab-panel hidden">
-      <div class="panel-head">
-        <h2>온보딩 체크리스트</h2>
+        <h2>내 할 일</h2>
         <button class="link-btn danger" data-clear="checklist">전체 삭제</button>
       </div>
-      <p class="sub">본인이 관리하는 메모입니다. 체크했다고 실제 제출·신청이 완료된 것은 아닙니다.</p>
+      <p class="sub">답변의 "해야 할 일"에서 담은 항목입니다. 본인만 볼 수 있습니다.</p>
+      <p class="sub small">체크는 본인 메모이며, 실제 제출·신청 완료를 뜻하지 않습니다.</p>
+      <p id="storage-note-todo" class="sub small hidden"></p>
       <div id="checklist" class="card-list"></div>
+    </div>
+
+    <div id="tab-saved" class="tab-panel hidden">
+      <div class="panel-head">
+        <h2>저장한 답변</h2>
+        <button class="link-btn danger" data-clear="saved_answers">전체 삭제</button>
+      </div>
+      <p class="sub">제목을 누르면 저장 당시의 답변 전체를 다시 볼 수 있습니다.</p>
+      <p class="sub small">본인만 볼 수 있으며 인사담당자와 관리자도 열람할 수 없습니다.</p>
+      <p id="storage-note-saved" class="sub small hidden"></p>
+      <div id="saved-answers" class="card-list"></div>
     </div>
 
     <div id="tab-docs" class="tab-panel hidden">

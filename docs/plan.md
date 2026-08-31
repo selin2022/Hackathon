@@ -5,7 +5,7 @@
 | 문서 ID | DOC-001 |
 | 버전 | v2.0 |
 | 개정일 | 2026-08-31 |
-| 관련 문서 | [`user-guide.md`](./user-guide.md) · [`../onpremise-design/onpremise-deployment.md`](../onpremise-design/onpremise-deployment.md) · [`../prototype/docs/technical-design.md`](../prototype/docs/technical-design.md) · [`demo-script.md`](./demo-script.md) |
+| 관련 문서 | [`user-guide.md`](./user-guide.md) · [`../onpremise-setup/onpremise-setup.md`](../onpremise-setup/onpremise-setup.md) · [`../prototype/docs/technical-design.md`](../prototype/docs/technical-design.md) · [`demo-script.md`](./demo-script.md) |
 
 **v2.0 주요 변경**
 
@@ -124,15 +124,15 @@
 
 | 저장함 | 저장하지 않음 |
 |---|---|
-| 가이드 북마크 | 주민등록번호·신분증·계좌번호·카드번호 |
-| 저장한 답변 (질문·요약·인용) | 비밀번호·인증번호 |
-| 체크리스트 진행 상태 | 건강검진 결과 등 건강정보 |
+| 저장한 답변 (질문·5단 구조 전체) | 주민등록번호·신분증·계좌번호·카드번호 |
+| 내 할 일 (항목·출처·완료 여부) | 비밀번호·인증번호 |
+| | 건강검진 결과 등 건강정보 |
 | | **실제 제출 파일** (챗봇은 업로드를 받지 않습니다) |
 | | 급여·인사 평가 정보 |
 
 - 저장 항목은 **본인만** 조회하며 인사담당자·관리자도 열람할 수 없습니다
 - 저장 전 민감정보 검사를 통과한 것만 저장합니다
-- 출처 문서가 갱신되면 저장 항목에 갱신 배지를 표시합니다
+- 출처 문서가 갱신되면 저장 항목에 갱신 안내를 표시하고, 새로 담긴 항목에는 New 배지를 붙입니다
 - 품질 개선용 자동 로그에는 질문 원문이 남지 않습니다 (해시와 카테고리만)
 
 ### 2.6 제외 범위
@@ -160,7 +160,7 @@
 
 | 구분 | 내용 |
 |---|---|
-| AI 적용 영역 | 반복 문의 분류, 문서 검색, 절차 요약, 체크리스트 생성 |
+| AI 적용 영역 | 반복 문의 분류, 문서 검색, 절차 요약, 할 일 목록 추출 |
 | AI 역량 | 검색(RAG), 근거 정리, 초기 분류, 근거 부족 감지 |
 | **AI가 하지 않을 일** | 권한 부여, 실제 신청·결재 실행, 세무·건강 개별 판단, 정책 예외 최종 결정 |
 | AI 역할 | 승인된 문서를 바탕으로 사실을 안내하고 근거·한계·다음 행동을 제시하는 안내자 |

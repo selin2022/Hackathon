@@ -5,7 +5,7 @@
 | 문서 ID | DOC-004 |
 | 버전 | v1.0 (구현 반영) |
 | 개정일 | 2026-08-31 |
-| 관련 문서 | [`../../docs/plan.md`](../../docs/plan.md) · [`../../docs/user-guide.md`](../../docs/user-guide.md) · [`../../onpremise-design/onpremise-deployment.md`](../../onpremise-design/onpremise-deployment.md) · [`../../docs/demo-script.md`](../../docs/demo-script.md) |
+| 관련 문서 | [`../../docs/plan.md`](../../docs/plan.md) · [`../../docs/user-guide.md`](../../docs/user-guide.md) · [`../../onpremise-setup/onpremise-setup.md`](../../onpremise-setup/onpremise-setup.md) · [`../../docs/demo-script.md`](../../docs/demo-script.md) |
 | 목적 | **이 문서만 읽고 코드를 작성할 수 있는 상태**를 만든다. 스택·파라미터·임계값·스키마·판정 규칙을 확정하고, 확정하지 못한 값은 "미정"이라고 명시한다 |
 
 > **이 문서의 합격 기준:** 구현 중에 "여기는 임의로 정해야겠다"가 나오면 이 문서가 실패한 것이다.
@@ -24,7 +24,7 @@
 
 | | **프로토타입 (이번 구현)** | **목표 운영 환경 (설계 문서)** |
 |---|---|---|
-| 증명 방식 | **실행되는 시연** | **설계 문서** (`../../onpremise-design/onpremise-deployment.md`) |
+| 증명 방식 | **실행되는 시연** | **설계 문서** (`../../onpremise-setup/onpremise-setup.md`) |
 | 배포 위치 | 로컬 / 외부 호스팅 | 사내망 또는 통제된 폐쇄망 |
 | 지식 데이터 | **합성 온보딩 문서만** | 승인된 실제 사내 문서 |
 | 개인 데이터 | 가상 프로필 3~4명 | 사내 인사 시스템의 최소 속성 |
@@ -710,13 +710,17 @@ Base: `/api` · 요청·응답 모두 `application/json; charset=utf-8`
 
 | 메서드 | 경로 | 용도 |
 |---|---|---|
-| POST | `/api/session` | 데모 로그인 (사번 선택) → 세션 쿠키 발급 |
+| POST | `/api/session` | 데모 로그인 (사번 + 비밀번호) → 서명 쿠키 발급 |
 | DELETE | `/api/session` | 로그아웃, 세션 즉시 폐기 |
 | GET | `/api/me` | 현재 사용자 (마스킹된 값만) |
 | POST | `/api/chat` | 질문 → 답변 |
 | GET | `/api/documents` | 문서 목록 (권한 범위 내) |
 | GET | `/api/documents/{doc_id}` | 문서 상세 |
-| POST | `/api/feedback` | 답변 피드백 |
+| GET | `/api/storage` | 저장한 답변·내 할 일 조회 (New·갱신 표시 포함) |
+| POST | `/api/storage` | 저장 (`saved_answers` \| `checklist`) — 민감정보 검사 통과 시에만 |
+| POST | `/api/storage/checklist/toggle` | 할 일 완료 토글 |
+| POST | `/api/storage/seen` | 목록을 열어본 것으로 표시 (New 배지 해제) |
+| DELETE | `/api/storage/{kind}/{item_id}` | 개별 삭제 (`item_id=all`이면 전체) |
 | GET | `/api/health` | 상태 확인 |
 
 ### 10.1 `POST /api/chat`
@@ -725,6 +729,13 @@ Base: `/api` · 요청·응답 모두 `application/json; charset=utf-8`
 
 ```json
 { "message": "입사 서류로 무엇을 제출해야 하나요?" }
+```
+
+**로그인 요청** — 비밀번호는 서버에서 상수 시간 비교로 검증한다. 클라이언트 코드에 비밀번호를
+두지 않으며, 데모 기본값일 때만 화면 안내용으로 `/api/users`가 힌트를 내려보낸다.
+
+```json
+{ "employee_no": "123456", "password": "1234" }
 ```
 
 - `message`: 필수, 1~500자. 초과 시 `E_INPUT_TOO_LONG`
@@ -786,7 +797,7 @@ Base: `/api` · 요청·응답 모두 `application/json; charset=utf-8`
 
 | 코드 | HTTP | 의미 |
 |---|---|---|
-| `E_AUTH` | 401 | 세션 없음·만료 |
+| `E_AUTH` | 401 | 세션 없음·만료, 사번·비밀번호 불일치 |
 | `E_INPUT_TOO_LONG` | 400 | 길이 초과 |
 | `E_INPUT_INVALID` | 400 | 형식 오류 |
 | `E_SENSITIVE_BLOCKED` | 400 | 민감정보 차단군 탐지 |
@@ -1009,7 +1020,11 @@ pytest                                       # 골든셋 회귀 테스트
 
 | 항목 | 결정 | 반영 위치 |
 |---|---|---|
-| **온보딩 진행 체크리스트 (E1)** | **범위에서 제외.** 챗봇은 질문·답변에 집중한다. 이용 가이드 §4의 읽기 전용 원칙을 그대로 유지하고, 진행 상황 추적은 사내 시스템의 역할로 둔다 | `../../docs/plan.md` 2.5에 반영 |
+| **온보딩 진행 추적 (E1)** | **포함으로 변경.** 초기에는 읽기 전용 원칙과 충돌한다고 보아 제외했으나, 저장 정책을 "사용자가 직접 저장을 선택한 것은 저장한다"로 개정하면서 충돌이 사라졌다. **내 할 일**로 구현한다 | 이용 가이드 §4.F |
+| **저장 항목 구성** | 북마크를 없애고 **저장한 답변**과 **내 할 일** 둘로 정리. 북마크는 저장한 답변이 이미 담고 있는 근거 문서·발췌와 역할이 겹쳤다 | 이용 가이드 §4.A |
+| **저장한 답변 다시 보기** | 목록만 보여주면 저장할 이유가 없다. 펼치면 저장 당시의 5단 구조 전체를 복원한다 | 이용 가이드 §4.E |
+| **New 배지** | 탭에 미완료 개수를 표시하고, 마지막 열람 이후 담긴 항목에 New를 붙인다. 열람 시각을 사용자별로 기록한다 | §10 `/api/storage/seen` |
+| **데모 로그인** | 사번 선택 + 고정 비밀번호. **검증은 서버에서** 상수 시간 비교로 한다 | §10.1 |
 | **HR-006 (인사평가·보상 기준)** | 추가. `restricted` · `hr_admin` 전용 → 역할 기반 차단 시연 | §5.3 |
 | **DEV-001 (개발팀 인수인계 가이드)** | 추가. `dept:개발팀` 전용 → **같은 질문, 다른 결과** 시연 | §5.3 |
 | **로그인** | 필수. 데모는 사번 선택 화면, 운영은 SSO로 교체 (§1.3) | §5.2 · §10.1 |

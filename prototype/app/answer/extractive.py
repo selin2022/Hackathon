@@ -189,8 +189,9 @@ def build(
 
     # ② 해야 할 일 — 리스트 항목 + 행동 동사로 끝나는 문장
     # 한 절이 할당량을 다 채우면 다른 절의 항목이 통째로 빠지므로 절당 상한을 둔다.
+    # 요약으로 이미 보여준 문장은 제외한다 — 같은 문장이 두 번 나오면 안 된다.
     actions: list[str] = []
-    seen: set[str] = set()
+    seen: set[str] = {summary} if summary else set()
     for cand in candidates:
         picked = 0
         for item, ordered in _list_items(body_of[id(cand)]):

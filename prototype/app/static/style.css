@@ -45,16 +45,24 @@ body {
 .login-card h1 { margin: 0 0 6px; font-size: 21px; }
 .sub { color: var(--muted); font-size: 13.5px; margin: 4px 0 0; }
 .sub.small { font-size: 12.5px; }
-.user-list { display: grid; gap: 10px; margin-top: 22px; }
-.user-card {
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--surface); cursor: pointer; text-align: left; width: 100%;
-  font: inherit; color: inherit;
+.field-label {
+  display: block; font-size: 13px; font-weight: 600; color: var(--muted);
+  margin: 18px 0 6px;
 }
-.user-card:hover { border-color: var(--accent); background: var(--accent-soft); }
-.user-card .name { font-weight: 600; }
-.user-card .meta { color: var(--muted); font-size: 12.5px; }
+.field {
+  width: 100%; padding: 11px 13px; border: 1px solid var(--border);
+  border-radius: 8px; font: inherit; background: var(--surface); color: var(--text);
+}
+.field:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.primary-btn {
+  width: 100%; margin-top: 20px; padding: 12px; border: none; border-radius: 8px;
+  background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+.primary-btn:hover { background: #24488a; }
+.login-error {
+  margin: 14px 0 0; padding: 10px 12px; border-radius: 7px; font-size: 13px;
+  background: #fdeceb; border: 1px solid #f0c4c1; color: var(--danger);
+}
 
 /* --- 상단바 --- */
 .topbar {
@@ -70,6 +78,16 @@ body {
 }
 .tab:hover { background: var(--bg); }
 .tab.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.tab-badge { display: inline-flex; gap: 4px; align-items: center; margin-left: 6px; }
+.tab-badge .count {
+  background: var(--muted); color: #fff; border-radius: 999px;
+  padding: 1px 7px; font-size: 11px; font-weight: 700; line-height: 1.5;
+}
+.tab.active .tab-badge .count { background: var(--accent); }
+.tab-badge .new {
+  background: #d94f45; color: #fff; border-radius: 999px;
+  padding: 1px 6px; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+}
 .user-chip { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .link-btn {
   background: none; border: none; color: var(--accent); cursor: pointer;
@@ -130,11 +148,21 @@ h3 { font-size: 14px; margin: 24px 0 8px; color: var(--muted); }
 .basis { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
 .contact { color: var(--muted); font-size: 13px; }
 .msg-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
-.msg-actions button {
-  border: 1px solid var(--border); background: var(--surface); border-radius: 6px;
-  padding: 5px 11px; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--muted);
+/* 눈에 띄는 실제 버튼. 텍스트 링크는 지나치기 쉽다. */
+.chip-btn {
+  border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent);
+  border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit;
+  font-size: 12.5px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
 }
-.msg-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.chip-btn:hover { background: var(--accent); color: #fff; }
+
+.action-list li { margin: 7px 0; }
+.action-row { display: flex; align-items: flex-start; gap: 10px; }
+.action-row .action-text { flex: 1; }
+
+.card-head { display: flex; align-items: flex-start; gap: 10px; }
+.card-body { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.new-badge { background: #fdeceb; border-color: #f0c4c1; color: var(--danger); font-weight: 700; }
 
 .composer { display: flex; gap: 8px; margin-top: 22px; }
 .composer input {
