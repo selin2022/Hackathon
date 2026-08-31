@@ -75,19 +75,15 @@ body {
 .tab {
   border: 1px solid transparent; background: none; padding: 7px 13px;
   border-radius: 7px; cursor: pointer; font: inherit; color: var(--muted);
+  width: 128px; text-align: center; flex-shrink: 0; white-space: nowrap;
 }
 .tab:hover { background: var(--bg); }
 .tab.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.tab-badge { display: inline-flex; gap: 4px; align-items: center; margin-left: 6px; }
+.tab-badge { display: inline-flex; gap: 4px; align-items: center; margin-left: 4px; }
 .tab-badge .count {
-  background: var(--muted); color: #fff; border-radius: 999px;
-  padding: 1px 7px; font-size: 11px; font-weight: 700; line-height: 1.5;
+  color: var(--muted); font-size: 12px; font-weight: 700;
 }
-.tab.active .tab-badge .count { background: var(--accent); }
-.tab-badge .new {
-  background: #d94f45; color: #fff; border-radius: 999px;
-  padding: 1px 6px; font-size: 10px; font-weight: 700; letter-spacing: .02em;
-}
+.tab-badge .count.is-new { color: #d94f45; font-size: 11px; }
 .user-chip { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .link-btn {
   background: none; border: none; color: var(--accent); cursor: pointer;
@@ -155,12 +151,27 @@ h3 { font-size: 14px; margin: 24px 0 8px; color: var(--muted); }
   font-size: 12.5px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
 }
 .chip-btn:hover { background: var(--accent); color: #fff; }
+.chip-btn.danger {
+  border-color: var(--danger); background: #fdeceb; color: var(--danger);
+}
+.chip-btn.danger:hover { background: var(--danger); color: #fff; }
+
+/* 펼치기/접기 아이콘 버튼 */
+.chevron-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  border-radius: 6px; width: 30px; height: 30px; padding: 0; cursor: pointer;
+  font-size: 16px; line-height: 1; display: inline-flex; align-items: center;
+  justify-content: center; flex-shrink: 0;
+  transition: transform .15s ease, color .15s ease, border-color .15s ease;
+}
+.chevron-btn:hover { border-color: var(--accent); color: var(--accent); }
+.chevron-btn.expanded { transform: rotate(90deg); color: var(--accent); border-color: var(--accent); }
 
 .action-list li { margin: 7px 0; }
-.action-row { display: flex; align-items: flex-start; gap: 10px; }
+.action-row { display: flex; align-items: center; gap: 10px; }
 .action-row .action-text { flex: 1; }
 
-.card-head { display: flex; align-items: flex-start; gap: 10px; }
+.card-head { display: flex; align-items: center; gap: 10px; }
 .card-body { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 .new-badge { background: #fdeceb; border-color: #f0c4c1; color: var(--danger); font-weight: 700; }
 
@@ -188,8 +199,8 @@ h3 { font-size: 14px; margin: 24px 0 8px; color: var(--muted); }
   margin-top: 7px; background: var(--warn-bg); border: 1px solid var(--warn-border);
   border-radius: 6px; padding: 6px 9px; font-size: 12.5px;
 }
-.card-row { display: flex; align-items: flex-start; gap: 10px; }
-.card-row input[type=checkbox] { margin-top: 4px; width: 16px; height: 16px; }
+.card-row { display: flex; align-items: center; gap: 10px; }
+.card-row input[type=checkbox] { width: 16px; height: 16px; flex-shrink: 0; }
 .card-row .grow { flex: 1; }
 .done .card-title { text-decoration: line-through; color: var(--muted); }
 .empty { color: var(--muted); font-size: 13.5px; padding: 10px 2px; }

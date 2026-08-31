@@ -288,10 +288,9 @@ function updateTabBadges(counts, newCounts) {
     const count = counts[kind] || 0;
     const fresh = newCounts[kind] || 0;
     clear(node);
-    if (!count && !fresh) { node.classList.add('hidden'); return; }
+    if (!count) { node.classList.add('hidden'); return; }
     node.classList.remove('hidden');
-    if (count) node.appendChild(el('span', 'count', count));
-    if (fresh) node.appendChild(el('span', 'new', 'New'));
+    node.appendChild(el('span', fresh ? 'count is-new' : 'count', count));
   });
 }
 
@@ -316,15 +315,17 @@ function renderSavedAnswers(list) {
     head.appendChild(titleWrap);
 
     const body = el('div', 'card-body hidden');
-    const toggle = button('펼치기', 'chip-btn', () => {
+    const toggle = button('›', 'chevron-btn', () => {
       const hidden = body.classList.toggle('hidden');
-      toggle.textContent = hidden ? '펼치기' : '접기';
+      toggle.classList.toggle('expanded', !hidden);
+      toggle.setAttribute('aria-label', hidden ? '펼치기' : '접기');
       if (!hidden && !body.firstChild) {
         body.appendChild(buildAnswerBody(a, { allowSave: false }));
       }
     });
+    toggle.setAttribute('aria-label', '펼치기');
     head.appendChild(toggle);
-    head.appendChild(button('삭제', 'link-btn danger', () => remove('saved_answers', a.id)));
+    head.appendChild(button('삭제', 'chip-btn danger', () => remove('saved_answers', a.id)));
     card.appendChild(head);
     if (a.stale) card.appendChild(el('div', 'stale', a.stale));
     card.appendChild(body);
@@ -356,7 +357,7 @@ function renderTodos(list) {
     }
     if (item.stale) grow.appendChild(el('div', 'stale', item.stale));
     row.appendChild(grow);
-    row.appendChild(button('삭제', 'link-btn danger', () => remove('checklist', item.id)));
+    row.appendChild(button('삭제', 'chip-btn danger', () => remove('checklist', item.id)));
     card.appendChild(row);
     box.appendChild(card);
   });
