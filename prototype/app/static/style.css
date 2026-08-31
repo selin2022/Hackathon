@@ -1,0 +1,176 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1f2328;
+  --muted: #656d76;
+  --accent: #2c5aa0;
+  --accent-soft: #eaf0fa;
+  --warn-bg: #fff8e6;
+  --warn-border: #e8d9a8;
+  --danger: #a3312a;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+        "Malgun Gothic", sans-serif;
+}
+
+.hidden { display: none !important; }
+
+.mode-badge {
+  background: #2b3441;
+  color: #e8eaed;
+  font-size: 12px;
+  letter-spacing: .01em;
+  padding: 7px 16px;
+  text-align: center;
+}
+
+/* --- 로그인 --- */
+.login-card {
+  max-width: 620px;
+  margin: 64px auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+}
+.login-card h1 { margin: 0 0 6px; font-size: 21px; }
+.sub { color: var(--muted); font-size: 13.5px; margin: 4px 0 0; }
+.sub.small { font-size: 12.5px; }
+.user-list { display: grid; gap: 10px; margin-top: 22px; }
+.user-card {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); cursor: pointer; text-align: left; width: 100%;
+  font: inherit; color: inherit;
+}
+.user-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+.user-card .name { font-weight: 600; }
+.user-card .meta { color: var(--muted); font-size: 12.5px; }
+
+/* --- 상단바 --- */
+.topbar {
+  display: flex; align-items: center; gap: 20px;
+  padding: 12px 22px; background: var(--surface); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 5; flex-wrap: wrap;
+}
+.brand { font-weight: 700; }
+.tabs { display: flex; gap: 4px; margin-left: auto; }
+.tab {
+  border: 1px solid transparent; background: none; padding: 7px 13px;
+  border-radius: 7px; cursor: pointer; font: inherit; color: var(--muted);
+}
+.tab:hover { background: var(--bg); }
+.tab.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.user-chip { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.link-btn {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font: inherit; font-size: 13px; padding: 2px 4px;
+}
+.link-btn.danger { color: var(--danger); }
+
+main { max-width: 900px; margin: 0 auto; padding: 22px 18px 60px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; }
+h2 { font-size: 17px; margin: 4px 0 2px; }
+h3 { font-size: 14px; margin: 24px 0 8px; color: var(--muted); }
+
+/* --- 빠른 질문 --- */
+.quick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.quick button {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 999px;
+  padding: 7px 14px; cursor: pointer; font: inherit; font-size: 13px;
+}
+.quick button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* --- 대화 --- */
+.messages { display: flex; flex-direction: column; gap: 16px; }
+.msg { max-width: 100%; }
+.msg.user .bubble {
+  background: var(--accent); color: #fff; border-radius: 14px 14px 2px 14px;
+  padding: 10px 14px; display: inline-block; max-width: 80%;
+}
+.msg.user { text-align: right; }
+.msg.bot .bubble {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px 14px 14px 2px; padding: 16px 18px;
+}
+.answer-section { margin-top: 14px; }
+.answer-section:first-child { margin-top: 0; }
+.answer-label {
+  font-size: 11.5px; font-weight: 700; color: var(--muted);
+  letter-spacing: .04em; margin-bottom: 5px;
+}
+.summary { font-size: 15.5px; font-weight: 600; }
+.answer-section ul, .answer-section ol { margin: 0; padding-left: 20px; }
+.answer-section li { margin: 3px 0; }
+
+.citation {
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  margin-top: 8px; background: #fbfcfd;
+}
+.citation .cite-title { font-weight: 600; font-size: 13.5px; }
+.citation .cite-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.citation .excerpt {
+  margin-top: 8px; padding-left: 10px; border-left: 3px solid var(--border);
+  color: #3d444d; font-size: 13px; white-space: pre-wrap;
+}
+
+.notice {
+  background: var(--warn-bg); border: 1px solid var(--warn-border);
+  border-radius: 7px; padding: 9px 12px; font-size: 13px; margin-top: 8px;
+}
+.basis { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+.contact { color: var(--muted); font-size: 13px; }
+.msg-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.msg-actions button {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 6px;
+  padding: 5px 11px; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--muted);
+}
+.msg-actions button:hover { border-color: var(--accent); color: var(--accent); }
+
+.composer { display: flex; gap: 8px; margin-top: 22px; }
+.composer input {
+  flex: 1; padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: 8px; font: inherit; background: var(--surface);
+}
+.composer input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.composer button {
+  padding: 12px 22px; border: none; border-radius: 8px;
+  background: var(--accent); color: #fff; cursor: pointer; font: inherit; font-weight: 600;
+}
+.composer-note { color: var(--muted); font-size: 12px; margin: 8px 2px 0; }
+
+/* --- 카드 목록 --- */
+.card-list { display: grid; gap: 10px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 13px 15px;
+}
+.card .card-title { font-weight: 600; font-size: 14px; }
+.card .card-meta { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+.card .stale {
+  margin-top: 7px; background: var(--warn-bg); border: 1px solid var(--warn-border);
+  border-radius: 6px; padding: 6px 9px; font-size: 12.5px;
+}
+.card-row { display: flex; align-items: flex-start; gap: 10px; }
+.card-row input[type=checkbox] { margin-top: 4px; width: 16px; height: 16px; }
+.card-row .grow { flex: 1; }
+.done .card-title { text-decoration: line-through; color: var(--muted); }
+.empty { color: var(--muted); font-size: 13.5px; padding: 10px 2px; }
+.badge {
+  display: inline-block; background: var(--warn-bg); border: 1px solid var(--warn-border);
+  border-radius: 5px; padding: 1px 7px; font-size: 11.5px; margin-left: 6px;
+}
+.toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  background: #2b3441; color: #fff; padding: 11px 20px; border-radius: 8px;
+  font-size: 13.5px; z-index: 20;
+}

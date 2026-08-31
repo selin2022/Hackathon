@@ -1,0 +1,15 @@
+# 정확한 버전 고정 (설계서 §2.1). 범위 지정을 쓰지 않는다.
+# 배포 용량을 줄이기 위해 scikit-learn·scipy 의존을 제거하고 TF-IDF를 직접 구현했다.
+starlette==0.41.3
+pydantic==2.10.4
+PyYAML==6.0.2
+numpy==2.2.1
+
+# 로컬 실행용 (Vercel 서버리스에서는 불필요)
+uvicorn==0.32.1
+
+# 선택: 신경망 임베딩을 쓸 때만 설치한다 (EMBEDDING_BACKEND=e5)
+# sentence-transformers==3.3.1
+
+# 개발용
+# pytest==8.3.4

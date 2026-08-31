@@ -1,0 +1,46 @@
+{
+  "_note": "해커톤 데모용 가상 프로필입니다. 실제 인사정보가 아닙니다. 여기 정의된 필드가 개인화 판정에 사용할 수 있는 전부이며, 이 목록에 없는 속성은 판정에 사용하지 않습니다.",
+  "_schema_ref": "docs/04-technical-design.md §3.4",
+  "users": {
+    "123456": {
+      "employee_no": "123456",
+      "display_name": "데모 신규입사자",
+      "role": "employee",
+      "dept": "개발팀",
+      "acl_groups": ["all_employees", "dept:개발팀"],
+      "hire_date": "2026-03-02",
+      "employment_type": "new",
+      "is_transfer": false
+    },
+    "234567": {
+      "employee_no": "234567",
+      "display_name": "데모 계속근로자",
+      "role": "employee",
+      "dept": "영업팀",
+      "acl_groups": ["all_employees", "dept:영업팀"],
+      "hire_date": "2023-04-17",
+      "employment_type": "tenured",
+      "is_transfer": false
+    },
+    "345678": {
+      "employee_no": "345678",
+      "display_name": "데모 이직경력입사자",
+      "role": "employee",
+      "dept": "개발팀",
+      "acl_groups": ["all_employees", "dept:개발팀"],
+      "hire_date": "2026-06-01",
+      "employment_type": "transfer",
+      "is_transfer": true
+    },
+    "901234": {
+      "employee_no": "901234",
+      "display_name": "데모 인사담당자",
+      "role": "hr_admin",
+      "dept": "인사팀",
+      "acl_groups": ["all_employees", "dept:인사팀", "hr_admin"],
+      "hire_date": "2021-02-15",
+      "employment_type": "tenured",
+      "is_transfer": false
+    }
+  }
+}

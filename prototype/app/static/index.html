@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사내 온보딩 도우미</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="mode-badge" class="mode-badge"></div>
+
+<!-- 로그인 (데모: 사번 선택) -->
+<section id="login-view" class="view">
+  <div class="login-card">
+    <h1>사내 온보딩 도우미</h1>
+    <p class="sub">이용하실 계정을 선택해 주세요. 해커톤 데모용 가상 사용자입니다.</p>
+    <p class="sub small">운영 환경에서는 이 화면 대신 사내 SSO 로그인이 들어갑니다.</p>
+    <div id="user-list" class="user-list"></div>
+  </div>
+</section>
+
+<!-- 메인 -->
+<section id="main-view" class="view hidden">
+  <header class="topbar">
+    <div class="brand">사내 온보딩 도우미</div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="chat">대화</button>
+      <button class="tab" data-tab="saved">내 저장함</button>
+      <button class="tab" data-tab="checklist">체크리스트</button>
+      <button class="tab" data-tab="docs">문서 목록</button>
+    </nav>
+    <div class="user-chip">
+      <span id="user-label"></span>
+      <button id="logout" class="link-btn">로그아웃</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="tab-chat" class="tab-panel">
+      <div id="quick" class="quick"></div>
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <form id="chat-form" class="composer" autocomplete="off">
+        <input id="chat-input" type="text" maxlength="500" placeholder="온보딩 절차에 대해 질문해 주세요"
+               aria-label="질문 입력">
+        <button type="submit">보내기</button>
+      </form>
+      <p class="composer-note">비밀번호·주민등록번호·계좌번호는 입력하지 마세요.</p>
+    </div>
+
+    <div id="tab-saved" class="tab-panel hidden">
+      <div class="panel-head">
+        <h2>내 저장함</h2>
+        <button class="link-btn danger" data-clear="all">전체 삭제</button>
+      </div>
+      <p class="sub">본인만 볼 수 있습니다. 인사담당자와 관리자도 열람할 수 없습니다.</p>
+      <p id="storage-note" class="sub small hidden"></p>
+      <h3>북마크</h3><div id="bookmarks" class="card-list"></div>
+      <h3>저장한 답변</h3><div id="saved-answers" class="card-list"></div>
+    </div>
+
+    <div id="tab-checklist" class="tab-panel hidden">
+      <div class="panel-head">
+        <h2>온보딩 체크리스트</h2>
+        <button class="link-btn danger" data-clear="checklist">전체 삭제</button>
+      </div>
+      <p class="sub">본인이 관리하는 메모입니다. 체크했다고 실제 제출·신청이 완료된 것은 아닙니다.</p>
+      <div id="checklist" class="card-list"></div>
+    </div>
+
+    <div id="tab-docs" class="tab-panel hidden">
+      <h2>열람 가능한 문서</h2>
+      <p class="sub">권한에 맞는 문서만 표시됩니다.</p>
+      <div id="docs" class="card-list"></div>
+    </div>
+  </main>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
