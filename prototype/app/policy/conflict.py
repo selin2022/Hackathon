@@ -1,6 +1,8 @@
 """문서 간 충돌 해소 (설계서 §8.3)."""
 from __future__ import annotations
 
+from app.indexing.loader import AUTHORITY_RANK
+
 CATEGORY_RANK = {"규정·정책": 2}  # 그 외는 1
 
 
@@ -59,11 +61,28 @@ def resolve(candidates: list, docs_by_id: dict) -> tuple[list, bool]:
     if not any(len(ids) > 1 for ids in subcats.values()):
         return kept, False
 
-    # 4)~5) 카테고리 등급 → 발행일. 최상위와 동급인 문서가 여럿이면 미해소로 본다.
+    # 4) 규정 위계 → 5) 카테고리 등급 → 6) 발행일.
+    #
+    # **위계가 발행일보다 앞선다.** 부서 지침이 더 최근이라는 이유로 취업규칙을 이기면
+    # 안 된다. 규정은 상위 규범이 하위를 구속하므로, 최신성으로 가릴 문제가 아니다.
+    # 안내문끼리는 위계가 모두 동급(1)이라 기존 규칙이 그대로 적용된다.
     def sort_key(c):
-        return (_rank(c.chunk.category), c.chunk.published_at)
+        return (
+            AUTHORITY_RANK.get(getattr(c.chunk, "authority_level", "안내문"), 1),
+            _rank(c.chunk.category),
+            c.chunk.published_at,
+        )
 
     top = max(sort_key(c) for c in kept)
     top_docs = {c.chunk.doc_id for c in kept if sort_key(c) == top}
+
+    # 위계가 갈렸다면 하위 규정은 인용에서 제외한다. 양쪽을 나란히 보여주면
+    # 사용자가 어느 쪽을 따라야 하는지 알 수 없고, 그것이 곧 잘못된 안내다.
+    top_rank = top[0]
+    if len({sort_key(c)[0] for c in kept}) > 1:
+        kept = [c for c in kept if sort_key(c)[0] == top_rank]
+        doc_ids = {c.chunk.doc_id for c in kept}
+        top_docs = {c.chunk.doc_id for c in kept if sort_key(c) == top}
+
     unresolved = len(top_docs) > 1 and len(doc_ids) > 1
     return kept, unresolved

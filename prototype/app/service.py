@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from app import config
-from app.answer import extractive, templates
+from app.answer import extractive, llm, templates
 from app.policy import conflict as conflict_policy
 from app.policy import guardrails, personalization
 from app.retrieval import acl
@@ -139,7 +139,22 @@ class ChatService:
         pers = personalization.resolve(user, effective_query, today)
 
         # [8] 답변 구성
-        answer = extractive.build(effective_query, candidates, pers, unresolved)
+        answer = extractive.build(effective_query, candidates, pers, unresolved,
+                                  faq_entry=result.faq)
+        if result.faq is not None:
+            meta["faq_match"] = {"doc_id": result.faq.doc_id,
+                                 "question": result.faq.question,
+                                 "score": result.faq_score}
+
+        # [8-1] §7.5 LLM 병합 — 근거가 여러 문장에 흩어진 경우에만 값이 있다.
+        # 개인화 판정 문구는 결정표 산출물이므로 건드리지 않는다.
+        if config.ANSWER_BACKEND == "llm" and not answer.get("personalization"):
+            sources = [extractive.clean_text(c.chunk.text) for c in candidates[:3]]
+            merged, info = llm.merge(effective_query, sources)
+            meta["llm_merge"] = info
+            if merged:
+                answer["summary"] = merged
+                answer["merged_by_llm"] = True
 
         # [9] 2차 권한 재검증 — 인용된 청크가 전부 허용 범위인지 (§4.6)
         for cand in candidates:
@@ -182,5 +197,22 @@ class ChatService:
                 "valid_until": doc.valid_until,
                 "status": doc.status,
                 "demo_assumption": doc.demo_assumption,
+                # 목록을 "전 직원 공통"과 "나에게만 열린 것"으로 가르기 위한 값.
+                # 원본 acl_groups를 그대로 내보내지 않는다 — 화면에 필요한 것은 소속 구분이지
+                # 그룹 이름이 아니며, 이름을 줄이는 편이 그룹 체계를 덜 드러낸다.
+                "scope": self._scope(sample),
+                "doc_type": doc.doc_type,
+                "authority_level": doc.authority_level,
             })
+        # 공통 먼저, 그 안에서 카테고리·문서ID 순. 화면에서 재정렬하지 않아도 되게 서버가 맞춘다.
+        order = {"공통": 0, "소속": 1, "역할": 2}
+        out.sort(key=lambda d: (order.get(d["scope"], 9), d["category"], d["doc_id"]))
         return out
+
+    @staticmethod
+    def _scope(chunk) -> str:
+        if "all_employees" in chunk.acl_groups:
+            return "공통"
+        if any(g.startswith("dept:") for g in chunk.acl_groups):
+            return "소속"
+        return "역할"

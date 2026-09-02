@@ -9,9 +9,15 @@ import numpy as np
 from app import config
 from app.indexing.chunker import Chunk, chunk_documents
 from app.indexing.loader import load_documents
-from app.retrieval import acl
+from app.retrieval import acl, faq
 from app.retrieval.bm25 import BM25, minmax_normalize
 from app.retrieval.embedder import EmbeddingBackend, build_embedder
+from app.retrieval.tokenizer_ko import STOPWORDS, bigrams, content_terms
+
+# 종결어미로 끝나는 토큰은 주제어가 아니다. "궁금해요", "싶어요"를 미지 주제로 오인하면
+# 정상적인 존댓말 질문이 통째로 막힌다.
+PREDICATE_ENDINGS = ("요", "다", "까", "죠", "지")
+MIN_SUBJECT_LEN = 3
 
 
 @dataclass
@@ -46,6 +52,8 @@ class SearchResult:
     acl_blocked: bool
     evidence_sufficient: bool
     gate_signals: dict
+    faq: object | None = None      # FaqEntry — 고신뢰 FAQ 매칭 결과 (§4.8)
+    faq_score: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -66,6 +74,8 @@ class Retriever:
         corpus = [c.embed_text for c in self.chunks]
         self.bm25 = BM25(corpus)
 
+        self.faq_entries = faq.build_index(self.documents, self.chunks)
+
         self.embedder = embedder or build_embedder()
         if self.embedder.available:
             self.embedder.fit_corpus(corpus)
@@ -76,6 +86,30 @@ class Retriever:
     @property
     def vector_bytes(self) -> int:
         return int(getattr(self.matrix, "nbytes", 0))
+
+    def unknown_subjects(self, query: str) -> list[str]:
+        """지식베이스에 아예 없는 주제어를 찾는다 (§4.7).
+
+        코사인은 질의 전체와의 **평균적** 유사도라, 질문이 길고 정중할수록 부수 어휘
+        (회사·복지·지원금·지급)가 점수를 끌어올려 정작 없는 주제를 덮어버린다.
+        "회사 복지 중 사내 동호회 지원금 지급일이 알고 싶어요"가 경조사 지원 내용으로
+        답해진 것이 그 사례다 — 같은 질문을 짧게 던지면 정상적으로 막혔다.
+        즉 자연스럽게 물을수록 게이트가 약해지는, 방향이 거꾸로 된 결함이었다.
+
+        한국어는 조사·어미가 붙어 어절 단위 대조가 어긋나므로 **bi-gram 단위**로 본다.
+        "지급일"은 `지급`이 코퍼스에 있어 통과하고, "동호회"는 `동호`·`호회` 어느 것도
+        없어 미지 주제로 판정된다.
+        """
+        out: list[str] = []
+        for term in content_terms(query):
+            if len(term) < MIN_SUBJECT_LEN or term in STOPWORDS:
+                continue
+            if term.endswith(PREDICATE_ENDINGS):
+                continue
+            grams = bigrams(term)
+            if grams and not any(f"__{g}" in self.bm25.idf for g in grams):
+                out.append(term)
+        return out
 
     @property
     def alpha(self) -> float:
@@ -163,13 +197,36 @@ class Retriever:
             "cos_top1": round(max((c.cosine for c in selected), default=0.0), 4),
             "hybrid_top1": round(selected[0].hybrid_score if selected else 0.0, 4),
             "citable_chunks": len(selected),
+            "unknown_subjects": self.unknown_subjects(query),
         }
         sufficient = self._gate(signals)
-        return SearchResult(query, selected, filtered_out, acl_blocked, sufficient, signals)
+
+        # §4.8 — FAQ 고신뢰 매칭. 질문끼리 사실상 일치하면 점수 게이트보다 강한 근거다.
+        # 다만 미지 주제어(G5)는 어떤 경우에도 뒤집지 않는다.
+        hit = None if signals["unknown_subjects"] else faq.match(query, self.faq_entries)
+        faq_entry, faq_score = (None, 0.0)
+        if hit is not None:
+            entry, score = hit
+            # FAQ도 청크와 똑같이 권한을 통과해야 한다. 여기를 빼면 부서 전용 문서의
+            # FAQ가 검색 필터를 우회해 새어 나간다.
+            if acl.is_visible(entry.chunk, user, today):
+                faq_entry, faq_score = entry, score
+                signals["faq_score"] = score
+                if not any(c.chunk.chunk_id == entry.chunk.chunk_id for c in selected):
+                    selected.insert(0, Candidate(entry.chunk, 0.0, 0.0, 0.0, 0.0))
+                    signals["citable_chunks"] = len(selected)
+                sufficient = True
+
+        return SearchResult(query, selected, filtered_out, acl_blocked, sufficient,
+                            signals, faq_entry, faq_score)
 
     def _gate(self, signals: dict) -> bool:
         """§4.7 — 모든 조건을 만족해야 답변을 생성한다."""
         if signals["citable_chunks"] < config.GATE_MIN_CITABLE:
+            return False
+        # 질문의 주제어가 지식베이스에 아예 없으면 점수와 무관하게 답하지 않는다.
+        # 점수는 "얼마나 비슷한가"를 재지만, 이 검사는 "그 주제가 있기는 한가"를 묻는다.
+        if signals.get("unknown_subjects"):
             return False
         if signals["hybrid_top1"] < config.GATE_HYBRID_TOP1:
             return False

@@ -18,6 +18,16 @@ REQUIRED_FIELDS = {
 }
 VALID_SENSITIVITY = {"public", "internal", "restricted"}
 VALID_STATUS = {"draft", "review", "published", "expired"}
+
+# --- §3.3 내규·규정 대응 -----------------------------------------------------
+# 온보딩 지식베이스에는 두 종류의 문서가 섞인다. 안내문은 "이렇게 하세요"이고,
+# 규정은 "제N조 ①"로 쓰인 사규다. 둘은 청킹 단위도, 인용 표기도, 충돌 시
+# 우선순위도 다르다. `doc_type`이 그 갈림길이다.
+VALID_DOC_TYPE = {"안내문", "규정"}
+
+# 규정 위계. 충돌 시 **발행일이 아니라 이 순위**로 가린다 (§8.3).
+# 부서 지침이 더 최근이라는 이유로 취업규칙을 이기면 안 된다.
+AUTHORITY_RANK = {"취업규칙": 4, "사규": 3, "부서지침": 2, "안내문": 1}
 DOC_ID_RE = re.compile(r"^[A-Z]{2,4}-\d{3}$")
 FRONT_MATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.S)
 
@@ -45,11 +55,30 @@ class Document:
     supersedes: str | None
     body: str
     source_path: str
+    # --- §3.3 내규·규정 필드. 안내문은 기본값으로 동작해 기존 문서를 건드리지 않는다.
+    doc_type: str = "안내문"
+    authority_level: str = "안내문"
+    effective_from: str = ""          # 시행일. 비면 published_at을 쓴다
+    statutory: list[str] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
 
     def is_expired(self, today: date | None = None) -> bool:
         today = today or date.today()
         return self.valid_until < today.isoformat()
+
+    def is_effective(self, today: date | None = None) -> bool:
+        """시행일이 지났는가.
+
+        **개정일과 시행일은 다르다.** 내규는 "2026-01-01부터 시행" 같은 부칙을 달고
+        공포일보다 늦게 효력이 생긴다. 시행 전 규정으로 답하면 아직 적용되지 않는
+        기준을 안내하는 셈이므로, 색인은 하되 검색에서는 제외한다.
+        """
+        today = today or date.today()
+        return (self.effective_from or self.published_at) <= today.isoformat()
+
+    @property
+    def authority_rank(self) -> int:
+        return AUTHORITY_RANK.get(self.authority_level, 1)
 
 
 def _as_date_str(value: Any) -> str:
@@ -80,6 +109,24 @@ def parse_document(path: Path) -> Document:
         if not isinstance(fm[key], list) or not fm[key]:
             raise DocumentValidationError(f"{path.name}: {key}는 비어 있을 수 없습니다.")
 
+    doc_type = str(fm.get("doc_type", "안내문"))
+    if doc_type not in VALID_DOC_TYPE:
+        raise DocumentValidationError(f"{path.name}: doc_type 값 오류 '{doc_type}'")
+
+    authority = str(fm.get("authority_level", "안내문"))
+    if authority not in AUTHORITY_RANK:
+        raise DocumentValidationError(f"{path.name}: authority_level 값 오류 '{authority}'")
+    # 규정은 위계를 반드시 선언해야 한다. 선언하지 않으면 충돌 시 안내문과 같은 등급이
+    # 되어, 취업규칙이 부서 지침에 밀리는 사고가 조용히 난다.
+    if doc_type == "규정" and authority == "안내문":
+        raise DocumentValidationError(
+            f"{path.name}: doc_type=규정이면 authority_level을 선언해야 합니다."
+        )
+
+    statutory = fm.get("statutory") or []
+    if not isinstance(statutory, list):
+        raise DocumentValidationError(f"{path.name}: statutory는 목록이어야 합니다.")
+
     body = text[match.end():]
     demo = bool(fm["demo_assumption"])
     if demo and "데모용 가정" not in text[:1500]:
@@ -105,6 +152,10 @@ def parse_document(path: Path) -> Document:
         supersedes=(str(fm["supersedes"]) if fm.get("supersedes") else None),
         body=body,
         source_path=str(path.name),
+        doc_type=doc_type,
+        authority_level=authority,
+        effective_from=_as_date_str(fm.get("effective_from") or fm["published_at"]),
+        statutory=[str(s) for s in statutory],
     )
 
 

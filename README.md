@@ -234,6 +234,15 @@
 
 배포하면 URL만 열면 바로 화면이 나옵니다. 빌드 명령이나 사전 색인이 필요 없습니다.
 
+1. Vercel에서 이 저장소를 Import 합니다.
+2. **Root Directory를 `prototype`으로 지정합니다.** ← 이것만 놓치지 마세요.
+3. Environment Variables에 `SESSION_SECRET`을 추가합니다 (권장).
+   생성: `python3 -c "import secrets; print(secrets.token_hex(32))"`
+4. Deploy를 누릅니다.
+
+Framework Preset은 자동 감지(Other)로 두고, Build Command와 Install Command는 비워 둡니다.
+`prototype/vercel.json`이 `api/index.py`를 진입점으로 연결합니다.
+
 > **서버리스에서 달라지는 점 하나:** 저장한 답변과 내 할 일은 서버 인스턴스가 살아 있는 동안만
 > 유지됩니다. 배포 환경의 파일시스템이 읽기 전용이기 때문이며, 화면 상단에 이 사실을 표시합니다.
 > 로그인 세션은 서명 쿠키를 쓰므로 인스턴스가 바뀌어도 풀리지 않습니다.

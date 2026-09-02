@@ -15,8 +15,9 @@ from app import config  # noqa: E402
 from app.answer import extractive  # noqa: E402
 from app.service import ChatService  # noqa: E402
 
-TODAY = date(2026, 8, 31)
-ANSWER_TYPES = {"normal", "personalized"}
+TODAY = date(2026, 9, 2)   # 평가 기준일. 문서의 effective_from(§3.3)이 이 날짜보다
+                           # 미래면 "시행 전"으로 검색에서 빠지므로, 문서 추가 시 함께 확인한다.
+ANSWER_TYPES = {"normal", "personalized", "regulation"}
 GREEN, RED, YELLOW, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 
@@ -79,6 +80,16 @@ def main() -> int:
         for frag in item.get("must_not_contain", []):
             if frag in text:
                 problems.append(f"노출:'{frag}'")
+
+        # 요약 전용 단언. must_contain은 발췌문까지 훑으므로 "정답이 어딘가 있다"까지만
+        # 보증한다. 정답이 **한 줄 요약으로 뽑혔는지**는 그것으로 검사할 수 없다.
+        summary = out.answer.get("summary", "")
+        for frag in item.get("summary_contains", []):
+            if frag not in summary:
+                problems.append(f"요약누락:'{frag}'")
+        for frag in item.get("summary_not_contains", []):
+            if frag in summary:
+                problems.append(f"요약노출:'{frag}'")
 
         ok = not problems
         mark = f"{GREEN}PASS{RESET}" if ok else f"{RED}FAIL{RESET}"

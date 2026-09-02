@@ -25,6 +25,24 @@ CAUTION_MARKERS = ("단,", "다만", "예외", "주의", "확인 필요", "달�
                    "필요할 수 있", "권합니다")
 # FAQ 섹션의 질문 문장은 답이 아니므로 요약 후보에서 제외한다.
 QUESTION_RE = re.compile(r"(\?|나요|까요|는가요|은가요|런가요|가요)\s*$")
+
+# 절차·목록을 묻는 질문인가. "무엇을 제출하나요"는 여러 절에 걸친 목록이 답이지만,
+# "검진 결과가 회사에 공유되나요"는 한 문장이 답이다. 후자에 절차 체크리스트와
+# 다른 절의 발췌를 붙이면 묻지 않은 내용이 답의 대부분을 차지한다.
+HANG_PREFIX_RE = re.compile(r"^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]\s*")
+
+# 규정이 "내 경우에" 적용되는지 묻는 질문. 이건 검색으로 답할 수 없는 유권해석이다.
+# 조문을 보여주되 판정은 하지 않는다는 것을 답변에 명시한다 (§8.5).
+INTERPRETATION_RE = re.compile(
+    r"제?\s*경우|이런\s?경우|저는|제가|해당(되|하|됩|합)|인정되|포함되|가능한가|"
+    r"되나요|봐도\s?되|써도\s?되|쓸\s?수\s?있"
+)
+
+PROCEDURE_QUERY_RE = re.compile(
+    r"무엇|뭐|뭘|어떻게|어떤|어디|순서|절차|방법|준비|과정|"
+    r"제출|신청|등록|수정|반납|이수|수강|예약|작성|"
+    r"해야|들어야|하나요|받나요|필요한|알려"
+)
 MAX_ACTIONS = 6
 MAX_ACTIONS_PER_CHUNK = 3
 MAX_CAUTIONS = 4
@@ -36,6 +54,11 @@ TABLE_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|[\s:|-]*$")
 def _clean(text: str) -> str:
     text = re.sub(r"[*_`>#]", "", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def clean_text(text: str) -> str:
+    """마크업을 뗀 평문. LLM 병합에 넘길 근거를 만들 때 쓴다 (§7.5)."""
+    return _clean(text)
 
 
 def _clean_display(line: str) -> str:
@@ -87,6 +110,17 @@ def _section_name(chunk) -> str:
     """표시용 절 이름. 경로에서 문서 제목을 뺀다 — 인용 카드에 이미 제목이 있다."""
     parts = [p for p in chunk.section_path.split(" > ") if p and p != chunk.title]
     return " > ".join(parts) if parts else chunk.title
+
+
+def _heading(chunk) -> str:
+    """요약 출처 선택에 쓸 절 제목. 문서 서두(절 없음) 조각은 빈 문자열이다.
+
+    서두 조각의 경로 마지막 칸은 문서 제목이라, 질의가 문서 주제어를 포함하기만 하면
+    항상 최고 점수가 되어 실제 답이 있는 절을 밀어낸다. 서두는 개요·고지문이지 답이
+    아니므로 제목 일치를 점수로 쳐 주지 않는다.
+    """
+    parts = [p for p in chunk.section_path.split(" > ") if p and p != chunk.title]
+    return parts[-1] if parts else ""
 
 
 def _overlap(sentence: str, query_tokens: set[str]) -> int:
@@ -145,10 +179,20 @@ def build(
     candidates: list,
     personalization: Personalization | None = None,
     conflict: bool = False,
+    faq_entry=None,
 ) -> dict:
     """상위 청크에서 5단 구조를 조립한다. 새 문장을 만들지 않는다."""
     query_tokens = set(tokenize(query))
     exclude = list(personalization.exclude_terms) if personalization else []
+    procedural = bool(PROCEDURE_QUERY_RE.search(query))
+
+    # 사실 확인 질문이면 상대 점수가 낮은 절은 같은 문서라도 인용에서 뺀다.
+    # 검색기는 1위 문서의 모든 절을 맥락으로 남겨 두는데(§4.5), 그 여유는 목록형
+    # 질문에 필요한 것이지 한 문장이 답인 질문에는 소음이 된다.
+    if not procedural and len(candidates) > 1:
+        floor = max(c.hybrid_score for c in candidates) * config.REL_SCORE_CUTOFF
+        kept = [c for c in candidates if c.hybrid_score >= floor]
+        candidates = kept or candidates[:1]
 
     # 분기 필터를 적용한 본문을 후보별로 미리 만들어 둔다. 이후 모든 추출은 이 본문만 본다.
     texts: list[tuple] = []
@@ -172,10 +216,7 @@ def build(
     # 있어서, 전체를 비교하면 모든 절이 같은 점수가 되어 순위가 그대로 유지된다.
     source = min(
         enumerate(candidates),
-        key=lambda pair: (
-            -_overlap(pair[1].chunk.section_path.split(" > ")[-1], query_tokens),
-            pair[0],
-        ),
+        key=lambda pair: (-_overlap(_heading(pair[1].chunk), query_tokens), pair[0]),
     )[1]
     sentences = [
         s for s in split_sentences(body_of[id(source)]) if not QUESTION_RE.search(s)
@@ -187,12 +228,22 @@ def build(
             key=lambda pair: (-_overlap(pair[1], query_tokens), pair[0]),
         )[1]
 
+    # 규정 조문은 "① …" 으로 시작한다. 발췌에서는 항 번호가 근거 확인에 도움이 되지만
+    # 한 줄 요약의 첫 글자로 나오면 문장이 잘린 것처럼 보인다. 요약에서만 뗀다.
+    summary = HANG_PREFIX_RE.sub("", summary).strip()
+
+    # §4.8 — FAQ가 사실상 같은 질문에 답하고 있으면 그 답을 그대로 쓴다.
+    # 문장을 고르는 것보다 정확하다. FAQ 답도 문서 원문이므로 불변 조건은 유지된다
+    # (표기만 _clean으로 맞춘다 — 원문의 `**`·백틱이 부분 문자열 검사를 어긋나게 한다).
+    if faq_entry is not None:
+        summary = _clean(faq_entry.answer)
+
     # ② 해야 할 일 — 리스트 항목 + 행동 동사로 끝나는 문장
     # 한 절이 할당량을 다 채우면 다른 절의 항목이 통째로 빠지므로 절당 상한을 둔다.
     # 요약으로 이미 보여준 문장은 제외한다 — 같은 문장이 두 번 나오면 안 된다.
     actions: list[str] = []
     seen: set[str] = {summary} if summary else set()
-    for cand in candidates:
+    for cand in candidates if procedural else []:
         picked = 0
         for item, ordered in _list_items(body_of[id(cand)]):
             if item in seen or picked >= MAX_ACTIONS_PER_CHUNK:
@@ -229,6 +280,9 @@ def build(
             if _section_name(cand.chunk) not in entry["sections"]:
                 entry["sections"].append(_section_name(cand.chunk))
                 entry["excerpt"] = f"{entry['excerpt']}\n\n{excerpt}"
+            ref = cand.chunk.article_ref
+            if ref and ref not in entry["article_refs"]:
+                entry["article_refs"].append(ref)
             continue
         entry = {
             "doc_id": cand.chunk.doc_id,
@@ -236,6 +290,10 @@ def build(
             "version": cand.chunk.doc_version,
             "section_path": cand.chunk.section_path,
             "sections": [_section_name(cand.chunk)],
+            # 규정은 절 이름이 아니라 조문 번호로 인용해야 확인이 가능하다 (§3.3).
+            "article_refs": [cand.chunk.article_ref] if cand.chunk.article_ref else [],
+            "authority_level": cand.chunk.authority_level,
+            "effective_from": cand.chunk.effective_from,
             "published_at": cand.chunk.published_at,
             "demo_assumption": cand.chunk.demo_assumption,
             "excerpt": excerpt,
@@ -259,6 +317,18 @@ def build(
     if conflict:
         notices.append(templates.CONFLICT_NOTICE)
 
+    # §8.5 규정 문서 고지. 인용된 조문이 법정 항목이면 반드시 알린다.
+    statutory: list[str] = []
+    for cand in candidates:
+        for item in cand.chunk.statutory:
+            if item not in statutory:
+                statutory.append(item)
+    if statutory:
+        notices.append(templates.statutory_notice(statutory))
+    # 규정 적용 여부를 묻는 질문에는 판정하지 않는다는 것을 명시한다.
+    if any(c.chunk.doc_type == "규정" for c in candidates) and INTERPRETATION_RE.search(query):
+        notices.append(templates.REGULATION_INTERPRETATION_NOTICE)
+
     answer = {
         "summary": summary,
         "actions": actions,
@@ -269,7 +339,7 @@ def build(
         "contact_message": "",
     }
 
-    if personalization:
+    if personalization and personalization.summary_override:
         answer["personalization"] = personalization.to_dict()
         # 개인화 판정 결과는 문서 인용이 아니라 결정표 산출물이므로 별도 필드로 둔다.
         answer["summary"] = personalization.message or summary
@@ -289,7 +359,9 @@ def verify_no_hallucination(answer: dict, candidates: list) -> list[str]:
     corpus = " ".join(_clean(c.chunk.text) for c in candidates)
     violations: list[str] = []
     checked = list(answer.get("actions", [])) + list(answer.get("cautions", []))
-    if not answer.get("personalization"):
+    # 개인화 문구는 결정표 산출물, LLM 병합 문장은 §7.5의 사실 검증을 이미 통과한 것이므로
+    # 부분 문자열 검사 대상이 아니다. 합친 문장은 정의상 원문에 없다.
+    if not answer.get("personalization") and not answer.get("merged_by_llm"):
         summary = answer.get("summary")
         if summary:
             checked.append(summary)

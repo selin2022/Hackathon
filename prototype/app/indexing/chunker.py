@@ -2,13 +2,20 @@
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from app import config
 from app.indexing.loader import Document
 
 HEADING_RE = re.compile(r"^(#{1,4})\s+(.*)$")
 SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+|(?<=다\.)\s*|(?<=요\.)\s*|(?<=습니다\.)\s*")
+
+# --- §4.1.1 조문 인식 --------------------------------------------------------
+# 규정은 "제3조(연차휴가) ① … ② …" 구조다. 안내문과 달리 **항 중간에서 자르면 안 된다.**
+# "① 연차는 15일로 한다"의 앞부분만 잘려 인용되면 조건절이 사라진 잘못된 안내가 된다.
+ARTICLE_RE = re.compile(r"제\s*(\d+)\s*조")
+HANG_MARKS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+HANG_SPLIT_RE = re.compile(f"(?=[{HANG_MARKS}])")
 
 
 @dataclass
@@ -28,6 +35,12 @@ class Chunk:
     published_at: str
     valid_until: str
     demo_assumption: bool
+    # --- §3.3 내규·규정
+    doc_type: str = "안내문"
+    authority_level: str = "안내문"
+    effective_from: str = ""
+    statutory: list[str] = field(default_factory=list)
+    article_ref: str = ""            # "제3조 제2항" — 규정 문서의 인용 표기
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -102,6 +115,45 @@ def _split_long(text: str) -> list[str]:
     return out or [text]
 
 
+def _split_articles(text: str) -> list[str]:
+    """규정 본문을 **항 경계에서만** 나눈다.
+
+    안내문용 `_split_long`은 문장 경계로 자르는데, 규정에 그대로 쓰면 한 항의 본문과
+    단서(`다만 …`)가 서로 다른 청크로 갈라진다. 조건이 떨어져 나간 조문은 잘못된 안내다.
+    항 하나가 상한을 넘어도 **자르지 않는다** — 법령 조항은 통째로 인용되어야 한다.
+    """
+    parts = [p.strip() for p in HANG_SPLIT_RE.split(text) if p.strip()]
+    if len(parts) <= 1:
+        return [text]
+
+    out: list[str] = []
+    cur = ""
+    for part in parts:
+        candidate = f"{cur}\n{part}" if cur else part
+        if cur and len(candidate) > config.CHUNK_MAX_CHARS:
+            out.append(cur)
+            cur = part
+        else:
+            cur = candidate
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _article_ref(section_path: str, text: str) -> str:
+    """인용 표기를 만든다. 규정은 절 이름이 아니라 **조문 번호**로 인용해야 한다."""
+    m = ARTICLE_RE.search(section_path)
+    if not m:
+        return ""
+    ref = f"제{int(m.group(1))}조"
+    hangs = [HANG_MARKS.index(ch) + 1 for ch in text if ch in HANG_MARKS]
+    if not hangs:
+        return ref
+    if len(hangs) == 1:
+        return f"{ref} 제{hangs[0]}항"
+    return f"{ref} 제{min(hangs)}~{max(hangs)}항"
+
+
 def chunk_document(doc: Document) -> list[Chunk]:
     root = doc.title
     chunks: list[Chunk] = []
@@ -111,12 +163,18 @@ def chunk_document(doc: Document) -> list[Chunk]:
         # 본문 H1이 문서 제목과 같으면 경로가 중복되므로 제거한다.
         parts = [p for p in section_path.split(" > ") if p and p != root]
         path = " > ".join([root, *parts]) if parts else root
-        for piece in _split_long(text):
+        splitter = _split_articles if doc.doc_type == "규정" else _split_long
+        for piece in splitter(text):
             raw.append((path, piece, start))
 
-    # 최소 길이 미만은 다음 조각과 병합 (§4.1)
+    # 최소 길이 미만은 다음 조각과 병합 (§4.1).
+    # 규정은 병합하지 않는다 — 짧은 조문을 옆 조문에 붙이면 인용이 "제3조"인지
+    # "제4조"인지 흐려진다. 조문은 짧아도 독립된 단위다.
     merged: list[tuple[str, str, int]] = []
     for path, text, start in raw:
+        if doc.doc_type == "규정":
+            merged.append((path, text, start))
+            continue
         if merged and len(text) < config.CHUNK_MIN_CHARS:
             p_path, p_text, p_start = merged[-1]
             if len(p_text) + len(text) <= config.CHUNK_MAX_CHARS:
@@ -142,6 +200,11 @@ def chunk_document(doc: Document) -> list[Chunk]:
                 published_at=doc.published_at,
                 valid_until=doc.valid_until,
                 demo_assumption=doc.demo_assumption,
+                doc_type=doc.doc_type,
+                authority_level=doc.authority_level,
+                effective_from=doc.effective_from,
+                statutory=list(doc.statutory),
+                article_ref=_article_ref(path, text),
             )
         )
     return chunks

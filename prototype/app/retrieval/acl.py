@@ -11,6 +11,7 @@ class AccessDecision:
     DENY_ACL = "deny_acl"
     DENY_AUDIENCE = "deny_audience"
     DENY_EXPIRED = "deny_expired"
+    DENY_NOT_EFFECTIVE = "deny_not_effective"
     DENY_SENSITIVITY = "deny_sensitivity"
 
 
@@ -26,6 +27,12 @@ def evaluate(chunk: Chunk, user: dict, today: date | None = None) -> str:
 
     if chunk.valid_until < today.isoformat():
         return AccessDecision.DENY_EXPIRED
+
+    # 시행 전 규정은 색인되어 있어도 답변에 쓰지 않는다 (§3.3).
+    # 개정안이 공포됐지만 아직 효력이 없는 기준으로 안내하면 지금 적용되지 않는
+    # 규정을 알려주는 셈이다. 발행일이 아니라 **시행일**이 기준이다.
+    if (chunk.effective_from or chunk.published_at) > today.isoformat():
+        return AccessDecision.DENY_NOT_EFFECTIVE
 
     # restricted 문서는 소유 역할만 열람한다 (§5.1 조건 4)
     if chunk.sensitivity == "restricted" and user.get("role") != "hr_admin":

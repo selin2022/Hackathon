@@ -10,10 +10,11 @@ from app import config
 from app.answer import extractive
 from app.service import ChatService
 
-TODAY = date(2026, 8, 31)
+TODAY = date(2026, 9, 2)   # 평가 기준일. 문서의 effective_from(§3.3)이 이 날짜보다
+                           # 미래면 "시행 전"으로 검색에서 빠지므로, 문서 추가 시 함께 확인한다.
 # 문서 유효기간·개인화 판정이 날짜에 의존하므로 기준일을 고정한다.
 
-ANSWER_TYPES = {"normal", "personalized"}
+ANSWER_TYPES = {"normal", "personalized", "regulation"}
 
 
 def load_golden() -> list[dict]:

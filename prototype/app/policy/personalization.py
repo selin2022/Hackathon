@@ -10,6 +10,15 @@ TAX_RE = re.compile(r"연말\s?정산|정산|원천징수|소득공제")
 YEAR_RE = re.compile(r"(20\d{2})\s*년")
 LAST_YEAR_RE = re.compile(r"작년|지난해|전년")
 
+# "내가 대상인가"를 묻는 질문의 표지. 결정표 판정은 이런 질문의 답이지,
+# 같은 주제의 모든 질문에 대한 답이 아니다.
+# "건강검진 결과는 회사에 공유되나요?"는 제도 문의이므로 대상 판정을 앞세우면
+# 질문과 무관한 답이 된다.
+ELIGIBILITY_RE = re.compile(
+    r"대상|자격|해당(되|하|인|합|됩)|언제|몇\s?살|몇\s?년|주기|차례|"
+    r"받아야|들어야|받을\s?수|받나요|받게|올해|내년|금년|저도|제가|나도"
+)
+
 
 @dataclass
 class Personalization:
@@ -21,6 +30,9 @@ class Personalization:
     # 이 사용자에게 해당하지 않는 분기의 내용을 인용에서 제외하기 위한 표현.
     # 계속 근로자에게 이직자 제출 서류를 보여주면 잘못된 안내가 된다.
     exclude_terms: list[str] = field(default_factory=list)
+    # 판정 문구로 한 줄 요약을 덮어쓸지 여부. 대상 여부를 묻지 않은 질문에서는
+    # 문서 본문이 답이고, 판정은 답이 아니다.
+    summary_override: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -148,11 +160,20 @@ def year_end_tax(user: dict, query: str = "", today: date | None = None) -> Pers
 
 
 def resolve(user: dict, query: str, today: date | None = None) -> Personalization | None:
-    """질문 주제에 따라 해당하는 결정표만 적용한다."""
+    """질문 주제에 따라 해당하는 결정표만 적용한다.
+
+    주제가 같아도 **대상 여부를 묻지 않은 질문**에는 판정을 답으로 내세우지 않는다.
+    건강검진은 판정 외에 할 일이 없으므로 아예 적용하지 않고, 연말정산은 유형별
+    분기 필터(exclude_terms)가 여전히 필요하므로 필터만 남기고 요약 덮어쓰기를 끈다.
+    """
+    asks_eligibility = bool(ELIGIBILITY_RE.search(query))
     if HEALTH_RE.search(query):
-        return health_checkup(user, today)
+        return health_checkup(user, today) if asks_eligibility else None
     if TAX_RE.search(query):
-        return year_end_tax(user, query, today)
+        pers = year_end_tax(user, query, today)
+        if pers and not asks_eligibility:
+            pers.summary_override = False
+        return pers
     return None
 
 

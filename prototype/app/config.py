@@ -53,12 +53,27 @@ MAX_CHUNKS_PER_DOC = 3
 REL_SCORE_CUTOFF = 0.62
 
 # --- §4.7 근거 충분성 게이트 ----------------------------------------------
-# §11.4 튜닝 절차로 골든셋에서 실측해 확정한 값 (2026-08-31, tfidf_heading 백엔드, α=0.4).
-# 정상 문항 최소 cos=0.310, 차단 대상 최대 cos=0.237 → 분리 구간의 중간값을 채택했다.
-# 이 값에서 정상 16/16 통과, 차단 7/7 유지.
-GATE_COS_TOP1 = float(os.getenv("GATE_COS_TOP1", "0.274"))
-GATE_HYBRID_TOP1 = float(os.getenv("GATE_HYBRID_TOP1", "0.564"))
+# §11.4 튜닝 절차로 골든셋에서 실측해 확정한 값 (2026-09-02, tfidf_heading 백엔드, α=0.4).
+# 문서 11종·골든셋 37문항 기준: 정상 문항 최소 cos=0.2532, 차단 대상 최대 cos=0.2043
+# → 분리 구간의 중간값 0.229를 채택했다. 이 값에서 정상 23/23·차단 7/7.
+#
+# **실질 게이트는 코사인이다.** 같은 측정에서 hybrid의 분리폭은 0.0016까지 좁아졌다
+# (§11.4.1). BM25를 min-max로 정규화하는 순간 hybrid가 cos의 선형 변환이 되기 때문이며,
+# 분리폭이 0에 수렴한 신호를 판정에 쓰면 작은 코퍼스 변화에도 결과가 뒤집힌다.
+# 그래서 G2는 판정자가 아니라 **하한 점검용**으로만 두고, 실제 분리는 G1이 담당한다.
+#
+# 문서를 추가하면 이 값은 반드시 다시 측정해야 한다. OPS-003·HR-007을 넣었을 때
+# 분리 구간이 한 번 사라졌고(정상 최소 0.1332 < 차단 최대 0.2000), 임계값이 아니라
+# **문서의 절 제목**을 사용자가 쓰는 단어로 고쳐서 복구했다 (§4.4 HEADING_REPEAT=3).
+GATE_COS_TOP1 = float(os.getenv("GATE_COS_TOP1", "0.229"))
+GATE_HYBRID_TOP1 = float(os.getenv("GATE_HYBRID_TOP1", "0.500"))
 GATE_MIN_CITABLE = 1
+
+# --- §4.8 FAQ 고신뢰 매칭 ---------------------------------------------------
+# 실측으로 정한 값. 0.28에서는 "퇴사하면 계정은 어떻게 되나요?"가 건강검진 FAQ와,
+# 0.41에서는 "입사 서류로 무엇을 제출해야 하나요?"가 제출 기한 FAQ와 매칭됐다.
+# 0.6 이상에서만 주제까지 일치했고, 그 구간에서 골든셋 회귀가 0이었다.
+FAQ_MATCH_MIN = float(os.getenv("FAQ_MATCH_MIN", "0.60"))
 
 # --- §9 세션 ---------------------------------------------------------------
 SESSION_TTL_SECONDS = 30 * 60
@@ -76,10 +91,22 @@ SVD_COMPONENTS = int(os.getenv("SVD_COMPONENTS", "128"))
 # 청크 텍스트 앞 헤딩을 몇 번 반복해 가중할지 (§4.4). 실측으로 3회가 최적이었다.
 HEADING_REPEAT = int(os.getenv("HEADING_REPEAT", "3"))
 
+# --- §7.5 답변 백엔드 -------------------------------------------------------
+# `extractive`가 기본이며 LLM 없이 완전하게 동작한다. `llm`은 근거 문장 병합만 추가로
+# 시도하고, 실패하면 언제나 추출 결과로 되돌아간다 — 더 나빠질 수는 없는 구조다.
+#
+# 온프레미스 전환은 LLM_BASE_URL을 사내 추론 서버로 바꾸는 것이 전부다.
+#   Ollama       : http://localhost:11434/v1
+#   vLLM·사내 서버 : http://llm.internal:8002/v1
+# 외부로 나가지 않는 보장은 이 설정이 아니라 egress 차단이 한다 (온프렘 §4.5.3).
 ANSWER_BACKEND = os.getenv("ANSWER_BACKEND", "extractive")  # extractive | llm
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "8"))
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "200"))
+# 한 줄 요약이므로 길면 지시를 벗어난 것이다. 길이 자체가 이상 신호다.
+LLM_MAX_SUMMARY_CHARS = int(os.getenv("LLM_MAX_SUMMARY_CHARS", "220"))
 
 # --- 데모 로그인 -----------------------------------------------------------
 # 데모용 고정 비밀번호. 실제 인증이 아니며 운영 환경에서는 사내 SSO로 대체된다.

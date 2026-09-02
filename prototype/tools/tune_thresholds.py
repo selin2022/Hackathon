@@ -17,9 +17,10 @@ from app.retrieval.embedder import build_embedder  # noqa: E402
 from app.retrieval.hybrid import Retriever  # noqa: E402
 from app.service import ChatService  # noqa: E402
 
-TODAY = date(2026, 8, 31)
+TODAY = date(2026, 9, 2)   # 평가 기준일. 문서의 effective_from(§3.3)이 이 날짜보다
+                           # 미래면 "시행 전"으로 검색에서 빠지므로, 문서 추가 시 함께 확인한다.
 # 답변이 나와야 하는 유형 / 막혀야 하는 유형
-ANSWER_TYPES = {"normal", "personalized"}
+ANSWER_TYPES = {"normal", "personalized", "regulation"}
 BLOCK_TYPES = {"forbidden", "no_evidence"}
 
 
@@ -40,11 +41,19 @@ def measure(alpha: float, backend: str) -> dict:
     retriever = Retriever(embedder=build_embedder(backend))
     svc = ChatService(retriever=retriever)
     rows = []
+    skipped: list[str] = []
     for item in load_golden():
         if item["type"] not in ANSWER_TYPES | BLOCK_TYPES:
             continue
         user = svc.users[item["user"]]
         res = retriever.search(item["query"], user, today=TODAY)
+        # 점수 게이트가 담당하지 않는 문항은 분리 구간 계산에서 뺀다.
+        # G5(미지 주제어)로 막히는 질의를 여기 섞으면 "분리 구간 없음"이 잘못 보고된다 —
+        # 실제로 G-038("…동호회 지원금 지급일이 알고 싶어요")이 cos 0.2576으로 정상 문항
+        # 최솟값을 넘지만, 차단은 점수가 아니라 주제어 부재로 이루어진다.
+        if res.gate_signals.get("unknown_subjects"):
+            skipped.append(item["id"])
+            continue
         docs = {c.chunk.doc_id for c in res.candidates}
         hit = bool(set(item["expected_docs"]) & docs) if item["expected_docs"] else None
         rows.append({
@@ -56,7 +65,7 @@ def measure(alpha: float, backend: str) -> dict:
         })
 
     config.GATE_COS_TOP1, config.GATE_HYBRID_TOP1 = saved
-    return {"alpha": alpha, "backend": backend, "rows": rows}
+    return {"alpha": alpha, "backend": backend, "rows": rows, "skipped": skipped}
 
 
 def summarize(result: dict) -> dict:
