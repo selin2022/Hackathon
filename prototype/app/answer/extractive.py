@@ -26,6 +26,11 @@ CAUTION_MARKERS = ("단,", "다만", "예외", "주의", "확인 필요", "달�
 # FAQ 섹션의 질문 문장은 답이 아니므로 요약 후보에서 제외한다.
 QUESTION_RE = re.compile(r"(\?|나요|까요|는가요|은가요|런가요|가요)\s*$")
 
+# "아래 두 가지 서류를 제출합니다"처럼 뒤 내용을 가리키기만 하는 문장은 한 줄 요약으로
+# 쓰면 정작 무엇인지 안 보인다. 이런 문장은 요약 후보에서 제외하고, 가리키는 대상
+# (목록 항목)이 직접 답이 되도록 한다.
+FORWARD_REF_RE = re.compile(r"아래|다음과 같이|다음의|다음 표")
+
 # 절차·목록을 묻는 질문인가. "무엇을 제출하나요"는 여러 절에 걸친 목록이 답이지만,
 # "검진 결과가 회사에 공유되나요"는 한 문장이 답이다. 후자에 절차 체크리스트와
 # 다른 절의 발췌를 붙이면 묻지 않은 내용이 답의 대부분을 차지한다.
@@ -43,6 +48,11 @@ PROCEDURE_QUERY_RE = re.compile(
     r"제출|신청|등록|수정|반납|이수|수강|예약|작성|"
     r"해야|들어야|하나요|받나요|필요한|알려"
 )
+
+# "어떤 순서로 신청하나요" 같이 절차 자체를 묻는 질문. 이런 질문만 여러 절의 번호
+# 목록을 그대로 훑는다 — "무엇을 제출하나요"처럼 절차를 묻지 않는 질문에 다른 절의
+# 절차가 섞여 들어오는 것을 막기 위한 구분이다.
+HOW_QUERY_RE = re.compile(r"어떻게|순서|절차|방법|과정")
 MAX_ACTIONS = 6
 MAX_ACTIONS_PER_CHUNK = 3
 MAX_CAUTIONS = 4
@@ -135,6 +145,12 @@ def _excerpt(text: str, query_tokens: set[str]) -> str:
 
     요약 한 문장은 '무엇을'은 담아도 '언제까지·몇 개'를 놓친다. 사용자가 근거를
     직접 확인할 수 있어야 하므로 관련 구간을 함께 보여준다.
+
+    줄 수는 일부러 상한을 두지 않는다 — 절 하나가 짧은 항목 여러 개로 이뤄져
+    있으면(예: "유의 사항"의 5개 항목) 절 뒤쪽의 사실이 잘려 나갈 수 있다
+    (실측: 4줄로 제한하면 "며칠 걸리나요" 질문의 답인 "영업일" 줄이 밀려 나갔다).
+    발췌와 주의·예외가 같은 내용을 두 번 보여주는 문제는 여기서 자르는 대신
+    `build()`에서 주의·예외 쪽을 발췌와 겹치지 않게 걸러 해결한다.
     """
     lines = [_clean_display(l) for l in text.split("\n") if l.strip()]
     lines = [l for l in lines if l]
@@ -208,6 +224,14 @@ def build(
     candidates = [c for c, _ in texts]
     body_of = {id(c): b for c, b in texts}
 
+    # FAQ 정답이 이미 확정된 경우엔 그 청크 하나로만 좁힌다 (§4.8). 같은 청크 안의
+    # 다른 질문·답은 이번 질문과 무관한 원문이므로, 인용·해야 할 일 어디에도 새어
+    # 나가면 안 된다.
+    if faq_entry is not None:
+        matched = [c for c in candidates if c.chunk.chunk_id == faq_entry.chunk.chunk_id]
+        if matched:
+            candidates = matched
+
     # ① 한 줄 요약
     # 먼저 **절 제목이 질의와 가장 잘 맞는 절**을 요약 출처로 고른다. 문장 겹침만 보면
     # FAQ 절이 이긴다 — 질문을 그대로 되풀이하기 때문이다. 절 제목이 그 절의 주제를
@@ -219,8 +243,14 @@ def build(
         key=lambda pair: (-_overlap(_heading(pair[1].chunk), query_tokens), pair[0]),
     )[1]
     sentences = [
-        s for s in split_sentences(body_of[id(source)]) if not QUESTION_RE.search(s)
+        s for s in split_sentences(body_of[id(source)])
+        if not QUESTION_RE.search(s) and not FORWARD_REF_RE.search(s)
     ]
+    if not sentences:
+        # 모든 문장이 전방 참조뿐이면(드묾) 어쩔 수 없이 되돌린다 — 아예 없는 것보다 낫다.
+        sentences = [
+            s for s in split_sentences(body_of[id(source)]) if not QUESTION_RE.search(s)
+        ]
     summary = ""
     if sentences:
         summary = min(
@@ -241,18 +271,33 @@ def build(
     # ② 해야 할 일 — 리스트 항목 + 행동 동사로 끝나는 문장
     # 한 절이 할당량을 다 채우면 다른 절의 항목이 통째로 빠지므로 절당 상한을 둔다.
     # 요약으로 이미 보여준 문장은 제외한다 — 같은 문장이 두 번 나오면 안 된다.
+    #
+    # 어느 절을 훑을지가 핵심이다. "무엇을 제출하나요"(WHAT) 같은 질문은 근거가
+    # source 절(요약을 뽑은 그 절) 하나에 있는데, 검색기는 1위 문서의 다른 절도
+    # 맥락으로 남겨 둔다(§4.5) — 그중 "제출 *방법*" 같은 절의 번호 목록이 무조건
+    # 담기면(원래 규칙: 번호 목록은 절차로 보고 무조건 담는다) 절차가 아닌 질문에
+    # 절차가 섞여 든다. "어떤 순서로 하나요"(HOW) 같은 질문만 여러 절의 절차를
+    # 그대로 훑는다.
+    how_query = bool(HOW_QUERY_RE.search(query))
+    action_candidates = candidates if how_query else [source]
     actions: list[str] = []
     seen: set[str] = {summary} if summary else set()
-    for cand in candidates if procedural else []:
+    # FAQ 답을 그대로 요약으로 쓴 경우 이미 완결된 문장이다. 같은 청크의 다른 질문·답
+    # 문장에서 행동 동사가 우연히 걸려 무관한 항목이 섞이지 않도록 여기서 멈춘다.
+    for cand in action_candidates if (procedural and faq_entry is None) else []:
         picked = 0
+        is_source = cand is source
         for item, ordered in _list_items(body_of[id(cand)]):
             if item in seen or picked >= MAX_ACTIONS_PER_CHUNK:
                 continue
             if _is_caution(item):
                 continue
-            # 번호 목록은 절차로 보고 그대로 담는다. 불릿 목록은 행동 문장만 담는다 —
-            # 대상 기준·설명 문장이 "해야 할 일"에 섞이면 안내가 틀어진다.
-            if not ordered and not ACTION_VERB_RE.search(item):
+            # 번호 목록은 절차로 보고 그대로 담는다. 불릿 목록은 원칙적으로 행동
+            # 문장만 담는다 — 대상 기준·설명 문장이 섞이면 안내가 틀어진다. 다만
+            # source 절 자체는 이미 질문에 대한 답으로 확정된 절이므로, 행동
+            # 동사로 안 끝나는 항목(예: "~가 필요합니다")도 그대로 담는다 —
+            # "무엇을 제출하나요"의 답은 절차가 아니라 항목 자체다.
+            if not ordered and not ACTION_VERB_RE.search(item) and not is_source:
                 continue
             seen.add(item)
             actions.append(item)
@@ -260,7 +305,12 @@ def build(
         for sent in split_sentences(body_of[id(cand)]):
             if picked >= MAX_ACTIONS_PER_CHUNK:
                 break
-            if ACTION_VERB_RE.search(sent) and sent not in seen and not _is_caution(sent):
+            if (
+                ACTION_VERB_RE.search(sent)
+                and sent not in seen
+                and not _is_caution(sent)
+                and not FORWARD_REF_RE.search(sent)
+            ):
                 seen.add(sent)
                 actions.append(sent)
                 picked += 1
@@ -270,11 +320,28 @@ def build(
     # 요약 한 문장만으로는 기한·수량 같은 핵심 사실이 빠지므로, 근거 구간을 보여준다.
     # 같은 문서의 여러 절이 인용됐다면 절 목록과 발췌를 모두 보여준다.
     # 문서 단위로만 접으면 정작 답이 있는 절이 화면에서 사라진다.
+    # "자주 묻는 질문" 절은 절 제목만으로 주제를 알 수 없어(§4.5 코멘트) 다른 질문에
+    # 관한 Q&A까지 후보로 남는다. FAQ가 정답으로 확정된 경우(faq_entry)는 이미 그
+    # 청크 하나로 좁혀졌으니 문제가 없지만, 그렇지 않은데도 이 절이 섞여 있으면
+    # 이번 질문과 무관한 질문·답이 근거 발췌에 그대로 노출된다. 절차를 직접 묻는
+    # 질문(how_query)이 아니고, FAQ가 아닌 다른 절이 이미 있다면 뺀다.
+    citation_candidates = candidates
+    if not how_query and faq_entry is None and len(candidates) > 1:
+        non_faq = [c for c in candidates if _heading(c.chunk) != "자주 묻는 질문"]
+        if non_faq:
+            citation_candidates = non_faq
+
     citations: list[dict] = []
     index: dict[str, dict] = {}
-    for cand in candidates:
+    for cand in citation_candidates:
         key = f"{cand.chunk.doc_id}@{cand.chunk.doc_version}"
-        excerpt = _excerpt(body_of[id(cand)], query_tokens)
+        if faq_entry is not None and cand.chunk.chunk_id == faq_entry.chunk.chunk_id:
+            # FAQ 청크는 여러 질문·답이 한 절에 들어 있다. 발췌를 그 절 전체에서
+            # 뽑으면 이번 질문과 무관한 다른 질문·답까지 원문으로 노출된다.
+            # 실제로 답으로 쓴 질문·답 쌍만 발췌로 보여준다.
+            excerpt = _clean(f"{faq_entry.question}\n{faq_entry.answer}")
+        else:
+            excerpt = _excerpt(body_of[id(cand)], query_tokens)
         if key in index:
             entry = index[key]
             if _section_name(cand.chunk) not in entry["sections"]:
@@ -302,14 +369,21 @@ def build(
         citations.append(entry)
 
     # ④ 주의·예외
+    # FAQ 답을 그대로 쓴 경우 생략한다 — 같은 청크의 다른 질문·답 문장에서 표현이
+    # 우연히 주의 문구 패턴에 걸려, 이번 질문과 무관한 주의사항이 붙는 것을 막는다.
     cautions: list[str] = []
-    for cand in candidates:
-        for sent in split_sentences(body_of[id(cand)]):
-            if any(marker in sent for marker in CAUTION_MARKERS) and sent not in cautions:
-                cautions.append(sent)
-        if len(cautions) >= MAX_CAUTIONS:
-            break
-    cautions = cautions[:MAX_CAUTIONS]
+    if faq_entry is None:
+        for cand in candidates:
+            for sent in split_sentences(body_of[id(cand)]):
+                if any(marker in sent for marker in CAUTION_MARKERS) and sent not in cautions:
+                    cautions.append(sent)
+            if len(cautions) >= MAX_CAUTIONS:
+                break
+        cautions = cautions[:MAX_CAUTIONS]
+        # 근거 발췌에 이미 그대로 나온 문장은 주의·예외에서 뺀다. 같은 내용이 발췌
+        # 카드와 주의·예외 목록에 두 번 나오면 "문서 전문이 두 번 나온다"는 인상을 준다.
+        excerpt_blob = "\n".join(c["excerpt"] for c in citations)
+        cautions = [c for c in cautions if c not in excerpt_blob]
 
     notices: list[str] = []
     if any(c["demo_assumption"] for c in citations):

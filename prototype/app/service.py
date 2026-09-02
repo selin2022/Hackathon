@@ -209,6 +209,37 @@ class ChatService:
         out.sort(key=lambda d: (order.get(d["scope"], 9), d["category"], d["doc_id"]))
         return out
 
+    # --- 문서 상세 (§10) ---------------------------------------------------
+    def get_document(self, doc_id: str, employee_no: str, today: date | None = None) -> dict | None:
+        """문서 원문(프런트매터 제외)을 반환한다. 목록에서 열람 가능한 문서만 대상이다.
+
+        존재하지만 권한 밖인 문서와 아예 없는 문서를 구분하지 않는다 — 목록 API와
+        같은 원칙이다. 권한 밖 문서의 존재를 알리지 않는다.
+        """
+        doc = self.retriever.docs_by_id.get(doc_id)
+        if doc is None:
+            return None
+        user = self.users.get(employee_no, {})
+        sample = next((c for c in self.retriever.chunks if c.doc_id == doc_id), None)
+        if sample is None or not acl.is_visible(sample, user, today):
+            return None
+        return {
+            "doc_id": doc.doc_id,
+            "title": doc.title,
+            "version": doc.version,
+            "category": doc.category,
+            "subcategory": doc.subcategory,
+            "owner_dept": doc.owner_dept,
+            "published_at": doc.published_at,
+            "valid_until": doc.valid_until,
+            "demo_assumption": doc.demo_assumption,
+            "doc_type": doc.doc_type,
+            "authority_level": doc.authority_level,
+            # 프런트매터(--- ... ---)는 loader가 이미 떼어냈다. 문서 본문 그대로이며
+            # 새 문장을 만들지 않는다 — 다른 모든 답변과 같은 원칙이다.
+            "body": doc.body.strip("\n"),
+        }
+
     @staticmethod
     def _scope(chunk) -> str:
         if "all_employees" in chunk.acl_groups:

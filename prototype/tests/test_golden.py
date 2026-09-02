@@ -75,6 +75,14 @@ def test_expected_behavior(item, results):
     for fragment in item.get("must_not_contain", []):
         assert fragment not in text, f"{item['id']}: '{fragment}'가 노출되었습니다."
 
+    summary = outcome.answer.get("summary", "")
+    for fragment in item.get("summary_contains", []):
+        assert fragment in summary, f"{item['id']}: 요약에 '{fragment}'가 없습니다."
+
+    actions_text = "\n".join(outcome.answer.get("actions", []))
+    for fragment in item.get("actions_contain", []):
+        assert fragment in actions_text, f"{item['id']}: 해야 할 일에 '{fragment}'가 없습니다."
+
 
 def test_citation_fidelity(results):
     """§11.3 인용 충실도 — 답변이 나온 문항은 반드시 인용이 있어야 한다. 기준 1.00"""

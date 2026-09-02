@@ -10,13 +10,17 @@ def no_evidence_answer() -> dict:
     """근거 부족과 권한 차단에 동일한 문구를 쓴다 (§7.4).
 
     문구가 다르면 응답 차이로 문서의 존재를 추론할 수 있다.
+
+    `contact`(담당 부서 구조화 카드)는 두지 않는다 — `contact_message` 한 줄에
+    이미 담당자·연락처·데모 고지가 다 들어 있어서, 구조화 카드까지 같이 보이면
+    같은 내용이 두 번 나온다. 내용이 없는 답변은 짧게 끝나야 한다.
     """
     return {
         "summary": config.NO_EVIDENCE_SUMMARY,
         "actions": [],
         "citations": [],
         "cautions": [],
-        "contact": dict(config.DEMO_CONTACT),
+        "contact": None,
         "contact_message": config.NO_EVIDENCE_CONTACT,
     }
 
@@ -27,7 +31,7 @@ def blocked_answer(message: str) -> dict:
         "actions": [],
         "citations": [],
         "cautions": [],
-        "contact": dict(config.DEMO_CONTACT),
+        "contact": None,
         "contact_message": config.NO_EVIDENCE_CONTACT,
     }
 
@@ -38,7 +42,7 @@ def upstream_error_answer() -> dict:
         "actions": [],
         "citations": [],
         "cautions": [],
-        "contact": dict(config.DEMO_CONTACT),
+        "contact": None,
         "contact_message": config.NO_EVIDENCE_CONTACT,
     }
 

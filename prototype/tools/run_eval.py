@@ -87,6 +87,14 @@ def main() -> int:
         for frag in item.get("summary_contains", []):
             if frag not in summary:
                 problems.append(f"요약누락:'{frag}'")
+
+        # 해야 할 일 전용 단언. "무엇을 제출하나요" 같은 질문은 정답이 발췌문이 아니라
+        # **해야 할 일 항목**으로 정리되어 나와야 한다. must_contain만으로는 발췌문에
+        # 원문이 섞여 있어도 통과하므로, 정리된 항목으로 나왔는지 따로 확인한다.
+        actions_text = "\n".join(out.answer.get("actions", []))
+        for frag in item.get("actions_contain", []):
+            if frag not in actions_text:
+                problems.append(f"해야할일누락:'{frag}'")
         for frag in item.get("summary_not_contains", []):
             if frag in summary:
                 problems.append(f"요약노출:'{frag}'")

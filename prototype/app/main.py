@@ -196,6 +196,18 @@ async def documents(request):
     return JSONResponse({"ok": True, "documents": service.list_documents(session.employee_no)})
 
 
+async def document_detail(request):
+    session = current_session(request)
+    if session is None:
+        return error("E_AUTH", "세션이 없습니다.", 401)
+    doc_id = request.path_params["doc_id"]
+    doc = service.get_document(doc_id, session.employee_no)
+    if doc is None:
+        # 권한 밖인지 존재하지 않는지 구분하지 않는다 (§4.6의 비노출 원칙과 동일).
+        return error("E_NOT_FOUND", "문서를 찾을 수 없습니다.", 404)
+    return JSONResponse({"ok": True, "document": doc})
+
+
 async def get_storage(request):
     session = current_session(request)
     if session is None:
@@ -286,6 +298,7 @@ routes = [
     Route("/api/me", me),
     Route("/api/chat", chat, methods=["POST"]),
     Route("/api/documents", documents),
+    Route("/api/documents/{doc_id}", document_detail),
     Route("/api/storage", get_storage),
     Route("/api/storage", post_storage, methods=["POST"]),
     Route("/api/storage/checklist/toggle", toggle_checklist, methods=["POST"]),

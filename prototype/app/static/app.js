@@ -258,14 +258,19 @@ function buildAnswerBody(answer, options) {
 
   (answer.notices || []).forEach((n) => frag.appendChild(el('div', 'notice', n)));
 
+  // 담당 부서 카드는 실제 답변(참고 문서가 있는 경우)에만 붙인다. 근거 부족·차단
+  // 응답은 contact_message 한 줄에 담당자·연락처가 이미 들어 있으므로, 그 한 줄만
+  // 안내로 보여주고 별도 "담당 부서" 카드는 만들지 않는다 — 같은 정보가 두 번
+  // 나오는 것을 막는다.
   if (answer.contact) {
     frag.appendChild(section('담당 부서', (box) => {
       const c = answer.contact;
       let line = `${c.dept || '인사팀'} ${c.person || ''} (${c.email || ''})`;
       if (c.is_demo) line += ' — 데모용 가상 정보';
       box.appendChild(el('div', 'contact', line));
-      if (answer.contact_message) box.appendChild(el('div', 'contact', answer.contact_message));
     }));
+  } else if (answer.contact_message) {
+    frag.appendChild(el('div', 'notice', answer.contact_message));
   }
   return frag;
 }
@@ -451,6 +456,130 @@ const SCOPE_SECTIONS = [
   { key: '역할', title: '내 역할 전용 문서', note: '담당 역할에만 열려 있어요.' },
 ];
 
+/* --- 문서 원문 렌더링 -------------------------------------------------
+ * 정리된 마크다운을 안전하게 그린다. innerHTML을 쓰지 않으므로 직접 파싱해
+ * DOM 노드로 만든다. 이 서비스의 지식문서에 실제로 쓰이는 구문(#~###, 목록,
+ * 표, 인용문, **굵게**)만 다룬다 — 범용 마크다운 파서가 아니다.
+ */
+const HEADING_LINE_RE = /^(#{1,3})\s+(.*)$/;
+const BULLET_LINE_RE = /^[-*]\s+(.*)$/;
+const ORDERED_LINE_RE = /^\d+\.\s+(.*)$/;
+const QUOTE_LINE_RE = /^>\s?(.*)$/;
+const TABLE_LINE_RE = /^\|(.*)\|$/;
+const TABLE_SEP_RE = /^\|?[\s:|-]+\|[\s:|-]*$/;
+
+/* "**굵게**"가 섞인 한 줄을 <strong>과 일반 텍스트 노드로 나눠 담는다. */
+function appendInlineText(node, text) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  parts.forEach((part) => {
+    if (!part) return;
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      node.appendChild(el('strong', null, part.slice(2, -2)));
+    } else {
+      node.appendChild(document.createTextNode(part));
+    }
+  });
+}
+
+function renderMarkdown(container, text) {
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i += 1; continue; }
+
+    const heading = HEADING_LINE_RE.exec(line);
+    if (heading) {
+      const level = Math.min(heading[1].length + 1, 4); // 문서 h1은 표시에서 h2로 낮춘다
+      const h = el(`h${level}`, 'doc-heading');
+      appendInlineText(h, heading[2].trim());
+      container.appendChild(h);
+      i += 1;
+      continue;
+    }
+
+    const quote = QUOTE_LINE_RE.exec(line);
+    if (quote) {
+      const bq = el('blockquote', 'doc-quote');
+      const p = el('p');
+      appendInlineText(p, quote[1]);
+      bq.appendChild(p);
+      container.appendChild(bq);
+      i += 1;
+      continue;
+    }
+
+    if (TABLE_LINE_RE.test(line)) {
+      const rows = [];
+      while (i < lines.length && TABLE_LINE_RE.test(lines[i])) {
+        if (!TABLE_SEP_RE.test(lines[i])) {
+          rows.push(lines[i].trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+        }
+        i += 1;
+      }
+      const table = el('table', 'doc-table');
+      rows.forEach((cells, r) => {
+        const tr = el('tr');
+        cells.forEach((cell) => {
+          const td = el(r === 0 ? 'th' : 'td');
+          appendInlineText(td, cell);
+          tr.appendChild(td);
+        });
+        table.appendChild(tr);
+      });
+      container.appendChild(table);
+      continue;
+    }
+
+    if (BULLET_LINE_RE.test(line) || ORDERED_LINE_RE.test(line)) {
+      const ordered = ORDERED_LINE_RE.test(line);
+      const list = el(ordered ? 'ol' : 'ul', 'doc-list');
+      while (i < lines.length && (BULLET_LINE_RE.test(lines[i]) || ORDERED_LINE_RE.test(lines[i]))) {
+        const m = ordered ? ORDERED_LINE_RE.exec(lines[i]) : BULLET_LINE_RE.exec(lines[i]);
+        const li = el('li');
+        appendInlineText(li, m[1]);
+        list.appendChild(li);
+        i += 1;
+      }
+      container.appendChild(list);
+      continue;
+    }
+
+    // 일반 문단 — 다음 빈 줄까지 한 문단으로 묶는다.
+    const buf = [line];
+    i += 1;
+    while (i < lines.length && lines[i].trim() && !HEADING_LINE_RE.test(lines[i])
+      && !BULLET_LINE_RE.test(lines[i]) && !ORDERED_LINE_RE.test(lines[i])
+      && !QUOTE_LINE_RE.test(lines[i]) && !TABLE_LINE_RE.test(lines[i])) {
+      buf.push(lines[i]);
+      i += 1;
+    }
+    const p = el('p', 'doc-para');
+    appendInlineText(p, buf.join(' '));
+    container.appendChild(p);
+  }
+}
+
+const documentDetailCache = new Map();
+
+async function toggleDocumentDetail(docId, body, openBtn) {
+  const hidden = body.classList.toggle('hidden');
+  openBtn.textContent = hidden ? '펼치기' : '접기';
+  if (hidden || body.firstChild) return;
+
+  if (!documentDetailCache.has(docId)) {
+    documentDetailCache.set(docId, api(`/api/documents/${encodeURIComponent(docId)}`));
+  }
+  const { status, data } = await documentDetailCache.get(docId);
+  if (status !== 200 || !data.document) {
+    body.appendChild(el('div', 'hint', '문서를 불러오지 못했어요.'));
+    return;
+  }
+  const wrap = el('div', 'doc-render');
+  renderMarkdown(wrap, data.document.body);
+  body.appendChild(wrap);
+}
+
 function documentRow(d) {
   const row = el('div', 'row');
   const badge = el('div', 'doc-icon');
@@ -458,15 +587,22 @@ function documentRow(d) {
   row.appendChild(badge);
 
   const grow = el('div', 'grow');
-  const title = el('div', 'row-title', `${d.title} v${d.version}`);
+  const body = el('div', 'card-body hidden');
+  const openBtn = button('펼치기', 'btn-ghost', () => toggleDocumentDetail(d.doc_id, body, openBtn));
+
+  // 제목을 눌러도, 펼치기 버튼을 눌러도 같은 동작을 한다 — 제목이 이 문서를
+  // 대표하는 가장 자연스러운 클릭 지점이기 때문이다.
+  const title = button(`${d.title} v${d.version}`, 'row-title link',
+    () => toggleDocumentDetail(d.doc_id, body, openBtn));
   if (d.doc_type === '규정') title.appendChild(el('span', 'badge', d.authority_level));
   if (d.demo_assumption) title.appendChild(el('span', 'badge', '데모용 가정'));
   grow.appendChild(title);
   grow.appendChild(el('div', 'row-meta',
     `${d.doc_id} · ${d.owner_dept} · 유효기간 ${d.valid_until}`));
+  grow.appendChild(body);
+
   row.appendChild(grow);
-  row.appendChild(el('span', d.scope === '공통' ? 'tag' : 'tag accent',
-    d.scope === '공통' ? '열람 가능' : '나에게만 열림'));
+  row.appendChild(openBtn);
   return row;
 }
 
