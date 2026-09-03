@@ -140,7 +140,7 @@ def _overlap(sentence: str, query_tokens: set[str]) -> int:
 EXCERPT_MAX = 320
 
 
-def _excerpt(text: str, query_tokens: set[str]) -> str:
+def _excerpt(text: str, query_tokens: set[str], exclude: set[str] | None = None) -> str:
     """질의와 가장 관련 있는 구간을 원문 그대로 발췌한다.
 
     요약 한 문장은 '무엇을'은 담아도 '언제까지·몇 개'를 놓친다. 사용자가 근거를
@@ -149,11 +149,20 @@ def _excerpt(text: str, query_tokens: set[str]) -> str:
     줄 수는 일부러 상한을 두지 않는다 — 절 하나가 짧은 항목 여러 개로 이뤄져
     있으면(예: "유의 사항"의 5개 항목) 절 뒤쪽의 사실이 잘려 나갈 수 있다
     (실측: 4줄로 제한하면 "며칠 걸리나요" 질문의 답인 "영업일" 줄이 밀려 나갔다).
-    발췌와 주의·예외가 같은 내용을 두 번 보여주는 문제는 여기서 자르는 대신
-    `build()`에서 주의·예외 쪽을 발췌와 겹치지 않게 걸러 해결한다.
+
+    `exclude`: 이미 "해야 할 일"/요약으로 보여준 문장 집합. 같은 목록 항목이
+    발췌에도 그대로 다시 나오면 "문서 전문이 두 번 나온다"는 인상을 준다
+    (예: "통장 사본" 항목이 해야 할 일에도, 발췌 카드에도 그대로 나오는 경우).
+    이미 보여준 항목을 담은 줄은 발췌 후보에서 뺀다 — 단, 그렇게 다 빼서
+    보여줄 줄이 하나도 안 남으면(예: 절 전체가 이미 보여준 항목뿐인 경우는
+    드물지만) 아무것도 안 보여주는 것보다는 원문을 그대로 보여주는 편이 낫다.
     """
     lines = [_clean_display(l) for l in text.split("\n") if l.strip()]
     lines = [l for l in lines if l]
+    if exclude:
+        filtered = [l for l in lines if not any(item and item in l for item in exclude)]
+        if filtered:
+            lines = filtered
     if not lines:
         return ""
     scored = sorted(range(len(lines)), key=lambda i: -_overlap(lines[i], query_tokens))
@@ -341,7 +350,7 @@ def build(
             # 실제로 답으로 쓴 질문·답 쌍만 발췌로 보여준다.
             excerpt = _clean(f"{faq_entry.question}\n{faq_entry.answer}")
         else:
-            excerpt = _excerpt(body_of[id(cand)], query_tokens)
+            excerpt = _excerpt(body_of[id(cand)], query_tokens, exclude=seen)
         if key in index:
             entry = index[key]
             if _section_name(cand.chunk) not in entry["sections"]:
@@ -371,19 +380,29 @@ def build(
     # ④ 주의·예외
     # FAQ 답을 그대로 쓴 경우 생략한다 — 같은 청크의 다른 질문·답 문장에서 표현이
     # 우연히 주의 문구 패턴에 걸려, 이번 질문과 무관한 주의사항이 붙는 것을 막는다.
+    #
+    # 훑는 범위는 candidates 전체가 아니라 citation_candidates다 — 근거 발췌에서
+    # 이미 뺀 절(예: 이번 질문과 무관한 "자주 묻는 질문" 절)의 문장이 주의·예외에는
+    # 새어 들어오면, 발췌-주의 중복 검사(아래)로도 못 잡는다. 인용에서 뺀 절이면
+    # 주의·예외에도 근거로 쓰지 않는 것이 일관된 규칙이다.
     cautions: list[str] = []
     if faq_entry is None:
-        for cand in candidates:
+        for cand in citation_candidates:
             for sent in split_sentences(body_of[id(cand)]):
                 if any(marker in sent for marker in CAUTION_MARKERS) and sent not in cautions:
                     cautions.append(sent)
             if len(cautions) >= MAX_CAUTIONS:
                 break
         cautions = cautions[:MAX_CAUTIONS]
-        # 근거 발췌에 이미 그대로 나온 문장은 주의·예외에서 뺀다. 같은 내용이 발췌
-        # 카드와 주의·예외 목록에 두 번 나오면 "문서 전문이 두 번 나온다"는 인상을 준다.
+        # 이미 다른 자리에 그대로 나온 문장은 주의·예외에서 뺀다 — 같은 내용을 두 번
+        # 보여주지 않는다는 원칙을 여기서도 적용한다.
+        #   1) 요약·해야 할 일에 이미 쓴 문장(seen). 예: "두 서류 모두 사본으로
+        #      제출하며, 원본은 제출하지 않습니다"가 요약으로 뽑히면서 동시에
+        #      "하지 않습니다" 표현 때문에 주의·예외로도 걸리는 경우.
+        #   2) 근거 발췌 카드에 그대로 나온 문장(excerpt_blob). 발췌 카드와 주의·예외
+        #      목록에 같은 내용이 두 번 나오면 "문서 전문이 두 번 나온다"는 인상을 준다.
         excerpt_blob = "\n".join(c["excerpt"] for c in citations)
-        cautions = [c for c in cautions if c not in excerpt_blob]
+        cautions = [c for c in cautions if c not in seen and c not in excerpt_blob]
 
     notices: list[str] = []
     if any(c["demo_assumption"] for c in citations):
