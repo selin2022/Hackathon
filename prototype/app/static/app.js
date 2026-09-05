@@ -272,13 +272,42 @@ function buildAnswerBody(answer, options) {
   } else if (answer.contact_message) {
     frag.appendChild(el('div', 'notice', answer.contact_message));
   }
+
+  if (opts.showFeedback) {
+    frag.appendChild(buildFeedbackRow());
+  }
   return frag;
+}
+
+/* 사용자 피드백 — 답변 하단에 👍/👎를 나란히 두어 지표(기술 설계서 §11.3, 싫어요
+ * 비율 <5%)로 무엇을 재려는지 보여준다. 이 프로토타입에는 수집 백엔드가 없으므로
+ * 서버로 전송하지 않고, 클릭 시 화면에서 선택 상태만 토글한다. */
+function buildFeedbackRow() {
+  const row = el('div', 'feedback-row');
+  row.appendChild(el('span', 'feedback-label', '이 답변이 도움이 되었나요?'));
+  const btns = el('div', 'feedback-btns');
+  const up = iconButton('i-thumb-up', 'feedback-btn is-up', '도움이 됐어요', onPick);
+  const down = iconButton('i-thumb-down', 'feedback-btn is-down', '도움이 안 됐어요', onPick);
+  function onPick(e) {
+    const picked = e.currentTarget === up ? up : down;
+    const already = picked.classList.contains('active');
+    up.classList.remove('active');
+    down.classList.remove('active');
+    if (!already) {
+      picked.classList.add('active');
+      toast('피드백 감사합니다.(프로토타입에서는 실제 집계를 하지 않습니다)');
+    }
+  }
+  btns.appendChild(up);
+  btns.appendChild(down);
+  row.appendChild(btns);
+  return row;
 }
 
 function renderAnswer(answer, meta) {
   const wrap = el('div', 'msg bot');
   const bubble = el('div', 'bubble');
-  bubble.appendChild(buildAnswerBody(answer, { allowSave: true }));
+  bubble.appendChild(buildAnswerBody(answer, { allowSave: true, showFeedback: true }));
 
   if (meta && meta.rewritten_query) {
     bubble.appendChild(el('div', 'basis',
